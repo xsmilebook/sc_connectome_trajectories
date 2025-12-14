@@ -4,6 +4,7 @@ from collections import Counter
 
 sc_folder = "D:\\projects\\sc_connectome_trajectories\\data\\ABCD\\sc_connectome\\schaefer400"
 input_csv = "D:\\projects\\sc_connectome_trajectories\\data\\ABCD\\table\\abcd_y_lt.csv"
+sex_csv = "D:\\projects\\sc_connectome_trajectories\\data\\ABCD\\table\\abcd_p_demo.csv"
 output_csv = "D:\\projects\\sc_connectome_trajectories\\data\\ABCD\\table\\subject_info_sc.csv"
 
 event_map = {
@@ -22,9 +23,9 @@ def list_scans(folder):
             scans.add(base)
     return scans
 
-def build_sex_map(input_path):
+def build_sex_map(sex_input_path):
     sex_by_subid = {}
-    with open(input_path, "r", newline="", encoding="utf-8-sig") as f:
+    with open(sex_input_path, "r", newline="", encoding="utf-8-sig") as f:
         reader = csv.DictReader(f)
         for row in reader:
             raw_sid = row.get("src_subject_id", "")
@@ -53,7 +54,13 @@ def build_subject_rows(input_path, scans, sex_by_subid):
             if scanid in seen:
                 continue
             siteid = row.get("site_id_l", "").strip()
-            age = row.get("interview_age", "").strip()
+            age_raw = row.get("interview_age", "").strip()
+            age_val = ""
+            if age_raw:
+                try:
+                    age_val = f"{float(age_raw) / 12:.2f}"
+                except ValueError:
+                    age_val = age_raw
             sex_here = row.get("demo_sex_v2", "").strip()
             sex_val = sex_here if sex_here else sex_by_subid.get(sid, "")
             rows.append({
@@ -61,7 +68,7 @@ def build_subject_rows(input_path, scans, sex_by_subid):
                 "sesid": ses,
                 "scanid": scanid,
                 "siteid": siteid,
-                "age": age,
+                "age": age_val,
                 "sex": sex_val,
             })
             seen.add(scanid)
@@ -93,7 +100,7 @@ def summarize(rows, scans):
 
 def main():
     scans = list_scans(sc_folder)
-    sex_by_subid = build_sex_map(input_csv)
+    sex_by_subid = build_sex_map(sex_csv)
     rows = build_subject_rows(input_csv, scans, sex_by_subid)
     write_csv(output_csv, rows)
     summarize(rows, scans)
