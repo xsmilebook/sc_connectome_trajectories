@@ -156,6 +156,43 @@ def plot_panel(arr1, arr2=None, out_path=None, cmap='YlOrBr'):
     fig.savefig(out_path, dpi=300, bbox_inches='tight')
     plt.close(fig)
 
+def plot_diff_only(diff, out_path):
+    sns.set_theme(style='whitegrid')
+    plt.rcParams.update({'font.size': 12})
+    vmax = float(np.nanmax(np.abs(diff))) if np.isfinite(np.nanmax(np.abs(diff))) else None
+    fig, ax = plt.subplots(1, 1, figsize=(9, 9))
+    a = sns.heatmap(
+        diff,
+        ax=ax,
+        cmap='vlag',
+        center=0.0,
+        cbar=True,
+        square=True,
+        vmin=(-vmax if vmax is not None else None),
+        vmax=(vmax if vmax is not None else None),
+        cbar_kws={'shrink': 0.7},
+    )
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.spines['top'].set_visible(True)
+    ax.spines['right'].set_visible(True)
+    ax.spines['left'].set_visible(True)
+    ax.spines['bottom'].set_visible(True)
+    ax.spines['top'].set_linewidth(1.5)
+    ax.spines['right'].set_linewidth(1.5)
+    ax.spines['left'].set_linewidth(1.5)
+    ax.spines['bottom'].set_linewidth(1.5)
+    ax.spines['top'].set_color('black')
+    ax.spines['right'].set_color('black')
+    ax.spines['left'].set_color('black')
+    ax.spines['bottom'].set_color('black')
+    ax.set_title('Structural Connectivity (Difference)')
+    a.collections[0].colorbar.set_label('Δ Log(Streamline Count)')
+    plt.tight_layout()
+    ensure_dir(os.path.dirname(out_path))
+    fig.savefig(out_path, dpi=300, bbox_inches='tight')
+    plt.close(fig)
+
 def parse_args():
     ap = argparse.ArgumentParser()
     ap.add_argument('--matrix1', type=str, default=None)
@@ -189,6 +226,7 @@ def main():
             df = df[['scanid', 'age']].copy()
             df['age'] = pd.to_numeric(df['age'], errors='coerce')
             bins = [(9.0, 11.0, '9-11'), (11.0, 13.0, '11-13'), (13.0, 15.0, '13-15')]
+            group_avgs = {}
             for low, high, label in bins:
                 if label != '13-15':
                     sel = df[(df['age'] >= low) & (df['age'] < high)]['scanid']
@@ -200,6 +238,7 @@ def main():
                     if os.path.exists(p):
                         paths.append(p)
                 if not paths:
+                    group_avgs[label] = None
                     continue
                 acc = None
                 n = 0
@@ -211,10 +250,24 @@ def main():
                     acc += a
                     n += 1
                 if n == 0:
+                    group_avgs[label] = None
                     continue
                 avg = acc / float(n)
                 out_path = os.path.join(fig_dir, f"sc_matrix_group_{label.replace('-', '_')}.png")
                 plot_panel(avg, arr2=None, out_path=out_path, cmap=args.cmap)
+                group_avgs[label] = avg
+            A = group_avgs.get('9-11')
+            B = group_avgs.get('11-13')
+            C = group_avgs.get('13-15')
+            if B is not None and A is not None:
+                out_path = os.path.join(fig_dir, "sc_matrix_group_diff_10_minus_12.png")
+                plot_diff_only(B - A, out_path)
+            if C is not None and B is not None:
+                out_path = os.path.join(fig_dir, "sc_matrix_group_diff_12_minus_14.png")
+                plot_diff_only(C - B, out_path)
+            if C is not None and A is not None:
+                out_path = os.path.join(fig_dir, "sc_matrix_group_diff_14_minus_10.png")
+                plot_diff_only(C - A, out_path)
 
 if __name__ == '__main__':
     main()
