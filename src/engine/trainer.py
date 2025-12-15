@@ -170,9 +170,14 @@ class Trainer:
             best_fold_val = math.inf
             best_state = None
             epochs_no_improve = 0
-            for _ in range(self.max_epochs):
+            print(f"Starting fold {fold_idx + 1}/5 with {len(train_idx)} train subjects and {len(val_idx)} val subjects")
+            for epoch in range(self.max_epochs):
                 train_loss = self._train_one_epoch(model, train_loader, optimizer)
                 val_loss = self._evaluate(model, val_loader)
+                print(
+                    f"Fold {fold_idx + 1}/5, epoch {epoch + 1}/{self.max_epochs}, "
+                    f"train_loss={train_loss:.4f}, val_loss={val_loss:.4f}"
+                )
                 if val_loss < best_fold_val:
                     best_fold_val = val_loss
                     best_state = model.state_dict()
@@ -180,6 +185,10 @@ class Trainer:
                 else:
                     epochs_no_improve += 1
                 if epochs_no_improve >= self.patience:
+                    print(
+                        f"Fold {fold_idx + 1}/5 early stopped at epoch {epoch + 1} "
+                        f"with best_val_loss={best_fold_val:.4f}"
+                    )
                     break
             fold_results.append(
                 {"fold": fold_idx, "best_val_loss": float(best_fold_val)}

@@ -39,6 +39,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--batch_size", type=int, default=4)
     parser.add_argument("--random_state", type=int, default=42)
     parser.add_argument("--model_path", type=str, default="")
+    parser.add_argument("--n_subjects", type=int, default=32)
     return parser
 
 
@@ -49,16 +50,18 @@ def main() -> None:
     if len(sequences) == 0:
         return
     splits_path = os.path.join(args.results_dir, "vector_lstm_subject_splits.csv")
-    if not os.path.exists(splits_path):
-        return
-    splits_df = __import__("pandas").read_csv(splits_path)
     subjects_all = [sid for sid, _ in sequences]
     idx_map = {sid: i for i, sid in enumerate(subjects_all)}
-    test_indices = [
-        idx_map[sid]
-        for sid, s in zip(splits_df["subject_id"], splits_df["set"])
-        if s == "test" and sid in idx_map
-    ]
+    if os.path.exists(splits_path):
+        splits_df = __import__("pandas").read_csv(splits_path)
+        test_indices = [
+            idx_map[sid]
+            for sid, s in zip(splits_df["subject_id"], splits_df["set"])
+            if s == "test" and sid in idx_map
+        ]
+    else:
+        n = min(args.n_subjects, len(sequences))
+        test_indices = list(range(n))
     if not test_indices:
         return
     triu_idx = compute_triu_indices(400)
