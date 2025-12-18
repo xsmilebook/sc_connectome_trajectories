@@ -1,0 +1,52 @@
+#!/bin/bash
+#SBATCH --job-name=schaefer400_morph
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=1
+#SBATCH --partition=q_fat_c
+#SBATCH --output=/ibmgpfs/cuizaixu_lab/xuhaoshu/code/schaefer400_morph_%A_%a.log
+#SBATCH --error=/ibmgpfs/cuizaixu_lab/xuhaoshu/code/schaefer400_morph_%A_%a.err
+
+set -euo pipefail
+
+module load freesurfer/7.1.1
+
+SUBLIST="${1:-sublist.txt}"
+ATLAS_DIR="${ATLAS_DIR:-}"
+SUBJECTS_DIR="${SUBJECTS_DIR:-${FREESURFER_DATA:-}}"
+
+if [[ -z "${SUBJECTS_DIR}" ]]; then
+  echo "ERROR: SUBJECTS_DIR is empty. Set SUBJECTS_DIR or FREESURFER_DATA." >&2
+  exit 1
+fi
+if [[ -z "${ATLAS_DIR}" ]]; then
+  echo "ERROR: ATLAS_DIR is empty. Set ATLAS_DIR to the folder containing lh/rh Schaefer .annot files." >&2
+  exit 1
+fi
+if [[ ! -f "${SUBLIST}" ]]; then
+  echo "ERROR: sublist not found: ${SUBLIST}" >&2
+  exit 1
+fi
+if [[ -z "${SLURM_ARRAY_TASK_ID:-}" ]]; then
+  echo "ERROR: SLURM_ARRAY_TASK_ID is not set. Submit as an array job." >&2
+  echo "Example:" >&2
+  echo "  N=\$(wc -l < sublist.txt)" >&2
+  echo "  sbatch --array=1-\${N} run_schaefer400_morphology.sbatch sublist.txt" >&2
+  exit 1
+fi
+
+SUBID="$(sed -n "${SLURM_ARRAY_TASK_ID}p" "${SUBLIST}" | tr -d '\r' | xargs)"
+if [[ -z "${SUBID}" ]]; then
+  echo "ERROR: empty subject id at line ${SLURM_ARRAY_TASK_ID} in ${SUBLIST}" >&2
+  exit 1
+fi
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+OUT_CSV="Schaefer400_Morphology_${SUBID}.csv"
+
+python "${SCRIPT_DIR}/extract_schaefer400_morphology.py" \
+  --subjects_dir "${SUBJECTS_DIR}" \
+  --atlas_dir "${ATLAS_DIR}" \
+  --subject_id "${SUBID}" \
+  --out_csv "${OUT_CSV}"
+
