@@ -91,30 +91,27 @@ def list_subjects(subjects_dir: str) -> List[str]:
 
 def map_annot_to_subject(
     subjects_dir: str,
+    output_dir: str,
     subject_id: str,
     hemi: str,
     src_annot: str,
     force: bool,
 ) -> str:
-    subj_label_dir = os.path.join(subjects_dir, subject_id, "label")
+    subj_out_root = os.path.join(output_dir, subject_id)
+    subj_label_dir = os.path.join(subj_out_root, "label")
     os.makedirs(subj_label_dir, exist_ok=True)
     out_annot = os.path.join(subj_label_dir, os.path.basename(src_annot))
     if os.path.exists(out_annot) and not force:
         return out_annot
     cmd = [
-        "mri_surf2surf",
-        "--srcsubject",
-        "fsaverage",
-        "--trgsubject",
-        subject_id,
-        "--hemi",
-        hemi,
-        "--sval-annot",
-        src_annot,
-        "--tval",
-        out_annot,
-        "--trg_type",
-        "curv",
+    "mri_surf2surf",
+    "--sd", subjects_dir,
+    "--srcsubject", "fsaverage",
+    "--trgsubject", subject_id,
+    "--hemi", hemi,
+    "--sval-annot", src_annot,
+    "--tval", out_annot,
+    "--mapmethod", "nnf",
     ]
     run_checked(cmd)
     return out_annot
@@ -211,7 +208,10 @@ def gwc_stats_to_roi_mean(rows: List[Dict[str, str]], hemi: str) -> Dict[str, fl
             roi_name = name
         else:
             roi_name = f"{hemi.upper()}_{name}"
-        mean_key = pick_first_key(r, ["Mean", "MeanVal", "MeanValue", "Mean_Val"])
+        mean_key = pick_first_key(r, [
+            "ThickAvg", "ThickAvg_mm", "MeanThickness", 
+            "Mean", "MeanVal", "MeanValue"
+        ])
         if mean_key is None:
             numeric_keys = [k for k in r.keys() if k.lower() in {"mean", "avg", "average"}]
             mean_key = numeric_keys[0] if numeric_keys else None
@@ -223,6 +223,7 @@ def gwc_stats_to_roi_mean(rows: List[Dict[str, str]], hemi: str) -> Dict[str, fl
 
 def extract_subject_metrics(
     subjects_dir: str,
+    output_dir: str,
     subject_id: str,
     atlas_annots: Dict[str, str],
     annot_basename: str,
@@ -233,12 +234,15 @@ def extract_subject_metrics(
     for hemi in ["lh", "rh"]:
         subj_annot = map_annot_to_subject(
             subjects_dir=subjects_dir,
+            output_dir=output_dir,
             subject_id=subject_id,
             hemi=hemi,
             src_annot=atlas_annots[hemi],
             force=force_map,
         )
-        stats_dir = os.path.join(subjects_dir, subject_id, "stats")
+
+        subj_out_root = os.path.join(output_dir, subject_id)
+        stats_dir = os.path.join(subj_out_root, "stats")
         os.makedirs(stats_dir, exist_ok=True)
         base_stats = os.path.join(
             stats_dir,
@@ -292,6 +296,7 @@ def extract_subject_metrics(
 def build_arg_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser()
     p.add_argument("--subjects_dir", type=str, default=os.environ.get("SUBJECTS_DIR", ""))
+    p.add_argument("--output_dir", type=str, default=".", help="Directory to save intermediate label/stats files")
     p.add_argument("--atlas_dir", type=str, default=os.environ.get("ATLAS_DIR", ""))
     p.add_argument("--annot_basename", type=str, default=DEFAULT_ANNOT_BASENAME)
     p.add_argument("--subject_id", type=str, default="")
@@ -321,6 +326,7 @@ def main() -> None:
     for sid in subjects:
         metrics = extract_subject_metrics(
             subjects_dir=args.subjects_dir,
+            output_dir=args.output_dir,
             subject_id=sid,
             atlas_annots=atlas_annots,
             annot_basename=args.annot_basename,

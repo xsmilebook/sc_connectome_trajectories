@@ -4,16 +4,19 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
 #SBATCH --partition=q_fat_c
-#SBATCH --output=/ibmgpfs/cuizaixu_lab/xuhaoshu/code/schaefer400_morph_%A_%a.log
-#SBATCH --error=/ibmgpfs/cuizaixu_lab/xuhaoshu/code/schaefer400_morph_%A_%a.err
+#SBATCH --output=/ibmgpfs/cuizaixu_lab/xuhaoshu/projects/sc_connectome_trajectories/logs/morph/schaefer400_morph_%A_%a.log
+#SBATCH --error=/ibmgpfs/cuizaixu_lab/xuhaoshu/projects/sc_connectome_trajectories/logs/morph/schaefer400_morph_%A_%a.err
 
 set -euo pipefail
 
 module load freesurfer/7.1.1
 
+export SUBJECTS_DIR="/GPFS/cuizaixu_lab_permanent/xuxiaoyu/ABCD/processed/freesurfer/baselineYear1Arm1/SIEMENS/site14"
+
 SUBLIST="${1:-sublist.txt}"
 ATLAS_DIR="${ATLAS_DIR:-}"
 SUBJECTS_DIR="${SUBJECTS_DIR:-${FREESURFER_DATA:-}}"
+OUTPUT_DIR="${OUTPUT_DIR:-}"
 
 if [[ -z "${SUBJECTS_DIR}" ]]; then
   echo "ERROR: SUBJECTS_DIR is empty. Set SUBJECTS_DIR or FREESURFER_DATA." >&2
@@ -41,12 +44,13 @@ if [[ -z "${SUBID}" ]]; then
   exit 1
 fi
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-OUT_CSV="Schaefer400_Morphology_${SUBID}.csv"
+SCRIPT_DIR="${SLURM_SUBMIT_DIR}"
+OUT_CSV="${OUTPUT_DIR}/Schaefer400_Morphology_${SUBID}.csv"
 
 python "${SCRIPT_DIR}/extract_schaefer400_morphology.py" \
   --subjects_dir "${SUBJECTS_DIR}" \
   --atlas_dir "${ATLAS_DIR}" \
   --subject_id "${SUBID}" \
+  --output_dir "${OUTPUT_DIR}" \
   --out_csv "${OUT_CSV}"
 
