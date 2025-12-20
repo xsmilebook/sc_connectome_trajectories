@@ -53,6 +53,19 @@ def normalize_subject_id(subject_id: str) -> str:
     return SESSION_SUFFIX_RE.sub("", subject_id.strip())
 
 
+def select_subjects_dir(subjects_dir: str, subject_id: str) -> str:
+    parts = [p for p in subjects_dir.split(":") if p]
+    if len(parts) <= 1:
+        return subjects_dir
+    for p in reversed(parts):
+        if os.path.isdir(os.path.join(p, subject_id)):
+            return p
+    for p in reversed(parts):
+        if os.path.isdir(p):
+            return p
+    return parts[-1]
+
+
 def detect_annot_paths(atlas_dir: str, annot_basename: str) -> Dict[str, str]:
     lh = os.path.join(atlas_dir, f"lh.{annot_basename}")
     rh = os.path.join(atlas_dir, f"rh.{annot_basename}")
@@ -230,6 +243,7 @@ def extract_subject_metrics(
     force_map: bool,
 ) -> Dict[str, float]:
     subject_id = normalize_subject_id(subject_id)
+    subjects_dir = select_subjects_dir(subjects_dir, subject_id)
     out: Dict[str, float] = {}
     for hemi in ["lh", "rh"]:
         subj_annot = map_annot_to_subject(

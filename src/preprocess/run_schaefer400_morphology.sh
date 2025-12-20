@@ -9,12 +9,15 @@
 
 set -euo pipefail
 
+SUBJECTS_DIR_IN="${SUBJECTS_DIR:-}"
+
 module load freesurfer/7.1.1
 
 SUBLIST="${1:-sublist.txt}"
 ATLAS_DIR="${ATLAS_DIR:-}"
-SUBJECTS_DIR="${SUBJECTS_DIR:-${FREESURFER_DATA:-}}"
+SUBJECTS_DIR="${SUBJECTS_DIR_IN:-${FREESURFER_DATA:-${SUBJECTS_DIR:-}}}"
 OUTPUT_DIR="${OUTPUT_DIR:-}"
+export SUBJECTS_DIR
 
 if [[ -z "${SUBJECTS_DIR}" ]]; then
   echo "ERROR: SUBJECTS_DIR is empty. Set SUBJECTS_DIR or FREESURFER_DATA." >&2
