@@ -11,8 +11,6 @@ set -euo pipefail
 
 module load freesurfer/7.1.1
 
-export SUBJECTS_DIR="/GPFS/cuizaixu_lab_permanent/xuxiaoyu/ABCD/processed/freesurfer/baselineYear1Arm1/SIEMENS/site14"
-
 SUBLIST="${1:-sublist.txt}"
 ATLAS_DIR="${ATLAS_DIR:-}"
 SUBJECTS_DIR="${SUBJECTS_DIR:-${FREESURFER_DATA:-}}"
@@ -24,6 +22,10 @@ if [[ -z "${SUBJECTS_DIR}" ]]; then
 fi
 if [[ -z "${ATLAS_DIR}" ]]; then
   echo "ERROR: ATLAS_DIR is empty. Set ATLAS_DIR to the folder containing lh/rh Schaefer .annot files." >&2
+  exit 1
+fi
+if [[ -z "${OUTPUT_DIR}" ]]; then
+  echo "ERROR: OUTPUT_DIR is empty. Set OUTPUT_DIR to a writable results folder under ABCD." >&2
   exit 1
 fi
 if [[ ! -f "${SUBLIST}" ]]; then
@@ -45,12 +47,18 @@ if [[ -z "${SUBID}" ]]; then
 fi
 
 SCRIPT_DIR="${SLURM_SUBMIT_DIR}"
-OUT_CSV="${OUTPUT_DIR}/Schaefer400_Morphology_${SUBID}.csv"
+SITE_NAME="${SITE_NAME:-}"
+OUTPUT_SITE="${OUTPUT_DIR}"
+if [[ -n "${SITE_NAME}" ]]; then
+  OUTPUT_SITE="${OUTPUT_DIR}/${SITE_NAME}"
+fi
+mkdir -p "${OUTPUT_SITE}"
+OUT_CSV="${OUTPUT_SITE}/Schaefer400_Morphology_${SUBID}.csv"
 
 python "${SCRIPT_DIR}/extract_schaefer400_morphology.py" \
   --subjects_dir "${SUBJECTS_DIR}" \
   --atlas_dir "${ATLAS_DIR}" \
   --subject_id "${SUBID}" \
-  --output_dir "${OUTPUT_DIR}" \
+  --output_dir "${OUTPUT_SITE}" \
   --out_csv "${OUT_CSV}"
 
