@@ -5,7 +5,7 @@ from collections import Counter
 sc_folder = "D:\\projects\\sc_connectome_trajectories\\data\\ABCD\\sc_connectome\\schaefer400"
 input_csv = "D:\\projects\\sc_connectome_trajectories\\data\\ABCD\\table\\abcd_y_lt.csv"
 sex_csv = "D:\\projects\\sc_connectome_trajectories\\data\\ABCD\\table\\abcd_p_demo.csv"
-output_csv = "D:\\projects\\sc_connectome_trajectories\\data\\ABCD\\morphology\\subject_info_sc.csv"
+output_csv = "D:\\projects\\sc_connectome_trajectories\\data\\ABCD\\table\\subject_info_sc.csv"
 
 event_map = {
     "2_year_follow_up_y_arm_1": "ses-2YearFollowUpYArm1",

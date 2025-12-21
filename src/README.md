@@ -8,3 +8,10 @@ sbatch --export=ALL,SUBJECTS_DIR="/GPFS/cuizaixu_lab_permanent/xuxiaoyu/ABCD/pro
 
 mkdir -p /ibmgpfs/cuizaixu_lab/xuhaoshu/projects/sc_connectome_trajectories/data/ABCD/table/sublist_by_site/4YearFollowUpYArm1
 bash submit_schaefer400_morphology_all_sites.sh /GPFS/cuizaixu_lab_permanent/xuxiaoyu/ABCD/processed/freesurfer/4YearFollowUpYArm1/SIEMENS /ibmgpfs/cuizaixu_lab/xuhaoshu/projects/sc_connectome_trajectories/data/ABCD/table/sublist_by_site/4YearFollowUpYArm1 ./run_schaefer400_morphology.sh
+
+## summarize morph
+python src/preprocess/export_morphology_tables.py \
+  --morph_root /ibmgpfs/cuizaixu_lab/xuhaoshu/projects/sc_connectome_trajectories/data/ABCD/morphology \
+  --subject_info_sc /ibmgpfs/cuizaixu_lab/xuhaoshu/projects/sc_connectome_trajectories/data/ABCD/table/subject_info_sc.csv \
+  --out_success /ibmgpfs/cuizaixu_lab/xuhaoshu/projects/sc_connectome_trajectories/data/ABCD/table/subject_info_morphology_success.csv \
+  --out_missing /ibmgpfs/cuizaixu_lab/xuhaoshu/projects/sc_connectome_trajectories/data/ABCD/table/subject_info_sc_without_morphology.csv
