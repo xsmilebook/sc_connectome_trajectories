@@ -7,6 +7,7 @@ import subprocess
 import tarfile
 import tempfile
 from pathlib import Path
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 
 ALLOWED_SESSIONS = {
@@ -171,6 +172,24 @@ def process_tgz(
             temp_ctx.cleanup()
 
 
+def process_group(group_payload):
+    machine = group_payload["machine"]
+    siteid = group_payload["siteid"]
+    tgz_paths = group_payload["tgz_paths"]
+    for tgz_path in tgz_paths:
+        process_tgz(
+            tgz_path=Path(tgz_path),
+            machine=machine,
+            siteid=siteid,
+            output_root=group_payload["output_root"],
+            dcm2niix=group_payload["dcm2niix"],
+            work_dir=group_payload["work_dir"],
+            keep_extracted=group_payload["keep_extracted"],
+            skip_existing=group_payload["skip_existing"],
+            dry_run=group_payload["dry_run"],
+        )
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Extract and reorganize ABCD sMRI tgz files into BIDS layout."
@@ -211,6 +230,12 @@ def main():
         action="store_true",
         help="Print actions without executing.",
     )
+    parser.add_argument(
+        "--num-workers",
+        type=int,
+        default=1,
+        help="Number of parallel workers (each worker handles one machine/site group).",
+    )
     args = parser.parse_args()
     if args.dcm2niix is None:
         dcm2niix_path = shutil.which("dcm2niix")
@@ -220,18 +245,35 @@ def main():
             )
         args.dcm2niix = dcm2niix_path
 
+    grouped = {}
     for machine, siteid, tgz_path in iter_tgz_files(args.input_root):
-        process_tgz(
-            tgz_path=tgz_path,
-            machine=machine,
-            siteid=siteid,
-            output_root=args.output_root,
-            dcm2niix=args.dcm2niix,
-            work_dir=args.work_dir,
-            keep_extracted=args.keep_extracted,
-            skip_existing=args.skip_existing,
-            dry_run=args.dry_run,
+        grouped.setdefault((machine, siteid), []).append(str(tgz_path))
+
+    payloads = []
+    for (machine, siteid), tgz_paths in grouped.items():
+        payloads.append(
+            {
+                "machine": machine,
+                "siteid": siteid,
+                "tgz_paths": tgz_paths,
+                "output_root": args.output_root,
+                "dcm2niix": args.dcm2niix,
+                "work_dir": args.work_dir,
+                "keep_extracted": args.keep_extracted,
+                "skip_existing": args.skip_existing,
+                "dry_run": args.dry_run,
+            }
         )
+
+    if args.num_workers <= 1:
+        for payload in payloads:
+            process_group(payload)
+    else:
+        workers = min(args.num_workers, max(1, len(payloads)))
+        with ProcessPoolExecutor(max_workers=workers) as executor:
+            futures = [executor.submit(process_group, payload) for payload in payloads]
+            for future in as_completed(futures):
+                future.result()
 
 
 if __name__ == "__main__":
