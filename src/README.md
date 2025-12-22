@@ -5,6 +5,10 @@
 ### sMRI
 subjects without processed freesurfer: /ibmgpfs/cuizaixu_lab/Public_Data/ABCD_20221009/rawdata/sMRI
 
+### run freesurfer
+N=$(find /GPFS/cuizaixu_lab_permanent/xuhaoshu/ABCD/raw_data/smri -type f -name "*_T1w.nii" | wc -l)
+sbatch --array=1-${N} src/preprocess/freesurfer.sh
+
 ## run morph
 export ATLAS_DIR="/ibmgpfs/cuizaixu_lab/xuhaoshu/projects/sc_connectome_trajectories/data/atlas"
 export OUTPUT_DIR="/ibmgpfs/cuizaixu_lab/xuhaoshu/projects/sc_connectome_trajectories/data/ABCD/morphology/4YearFollowUpYArm1/SIEMENS"
