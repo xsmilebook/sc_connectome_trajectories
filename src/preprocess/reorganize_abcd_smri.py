@@ -17,7 +17,7 @@ ALLOWED_SESSIONS = {
 ALLOWED_MACHINES = {"SIEMENS", "Philips", "GE"}
 SITE_PATTERN = re.compile(r"^site\d{1,2}$")
 TGZ_PATTERN = re.compile(
-    r"^(NDARINV[0-9A-Z]+)_(baselineYear1Arm1|2YearFollowUpYArm1|4YearFollowUpYArm1)_ABCD-T1-NORM_(\d+)\.tgz$"
+    r"^(NDARINV[0-9A-Z]+)_(baselineYear1Arm1|2YearFollowUpYArm1|4YearFollowUpYArm1)_ABCD-T1(?:-NORM)?_(\d+)\.tgz$"
 )
 
 
@@ -203,7 +203,8 @@ def main():
     parser.add_argument(
         "--skip-existing",
         action="store_true",
-        help="Skip if target NIfTI and JSON already exist.",
+        default=True,
+        help="Skip if target NIfTI and JSON already exist (default: true).",
     )
     parser.add_argument(
         "--dry-run",
