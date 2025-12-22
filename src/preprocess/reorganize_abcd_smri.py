@@ -68,7 +68,7 @@ def find_anat_paths(extract_root, sesid):
     dcm_dir = None
     json_path = None
     for entry in anat_dir.iterdir():
-        if entry.is_dir() and entry.name.startswith("ABCD-T1-NORM_run-"):
+        if entry.is_dir() and entry.name.startswith("ABCD-T1"):
             dcm_dir = entry
             json_candidate = anat_dir / f"{entry.name}.json"
             if json_candidate.exists():
