@@ -1,5 +1,10 @@
 # sc_connectome_trajectories
 
+## data
+
+### sMRI
+subjects without processed freesurfer: /ibmgpfs/cuizaixu_lab/Public_Data/ABCD_20221009/rawdata/sMRI
+
 ## run morph
 export ATLAS_DIR="/ibmgpfs/cuizaixu_lab/xuhaoshu/projects/sc_connectome_trajectories/data/atlas"
 export OUTPUT_DIR="/ibmgpfs/cuizaixu_lab/xuhaoshu/projects/sc_connectome_trajectories/data/ABCD/morphology/4YearFollowUpYArm1/SIEMENS"
