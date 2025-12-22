@@ -1,11 +1,7 @@
 #!/bin/bash
 #SBATCH -J freesurfer
-#SBATCH --nodes=1
-#SBATCH --ntasks=1
-#SBATCH --cpus-per-task=8
-#SBATCH --mem-per-cpu=20gb
+#SBATCH --cpus-per-task=4
 #SBATCH -p q_fat_c
-#SBATCH -q high_c
 #SBATCH --output=/GPFS/cuizaixu_lab_permanent/xuhaoshu/ABCD/logs/freesurfer/freesurfer_%A_%a.log
 #SBATCH --error=/GPFS/cuizaixu_lab_permanent/xuhaoshu/ABCD/logs/freesurfer/freesurfer_%A_%a.err
 
