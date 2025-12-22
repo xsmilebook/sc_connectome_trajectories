@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH -J freesurfer
-#SBATCH --cpus-per-task=4
+#SBATCH --cpus-per-task=8
 #SBATCH -p q_fat
 #SBATCH --output=/GPFS/cuizaixu_lab_permanent/xuhaoshu/ABCD/logs/freesurfer/freesurfer_%A_%a.log
 #SBATCH --error=/GPFS/cuizaixu_lab_permanent/xuhaoshu/ABCD/logs/freesurfer/freesurfer_%A_%a.err
@@ -25,29 +25,44 @@ if [[ ! -f "${SUBJECT_CSV}" ]]; then
 fi
 if [[ ! -f "${SUBLIST}" ]]; then
   tmp_list="$(mktemp "${SUBLIST}.XXXXXX")"
-  python - "${SUBJECT_CSV}" << 'PY' | while IFS=$'\t' read -r subid sesid; do
+  python - "${SUBJECT_CSV}" "${BIDS_ROOT}" > "${tmp_list}" << 'PY'
 import csv
 import sys
+from pathlib import Path
 
 csv_path = sys.argv[1]
+bids_root = Path(sys.argv[2])
+
 with open(csv_path, newline="") as handle:
     reader = csv.DictReader(handle)
     if "subid" not in reader.fieldnames or "sesid" not in reader.fieldnames:
         raise SystemExit("ERROR: CSV must contain subid and sesid columns.")
+    wanted = set()
     for row in reader:
         subid = (row.get("subid") or "").strip()
         sesid = (row.get("sesid") or "").strip()
         if subid and sesid:
-            print(f"{subid}\t{sesid}")
+            wanted.add((subid, sesid.replace("ses-", "", 1)))
+
+found = set()
+for t1w in bids_root.rglob("*_T1w.nii"):
+    try:
+        rel = t1w.relative_to(bids_root)
+    except ValueError:
+        continue
+    parts = rel.parts
+    if len(parts) < 5:
+        continue
+    sesid = parts[0]
+    subid = parts[3]
+    if (subid, sesid) in wanted:
+        print(str(t1w))
+        found.add((subid, sesid))
+
+missing = wanted - found
+for subid, sesid in sorted(missing):
+    print(f"Skip missing T1w for {subid} ses-{sesid}", file=sys.stderr)
 PY
-    ses="${sesid#ses-}"
-    match="$(find "${BIDS_ROOT}" -type f -path "*/${ses}/*/*/${subid}/anat/${subid}_T1w.nii" | sort | head -n 1)"
-    if [[ -n "${match}" ]]; then
-      echo "${match}" >> "${tmp_list}"
-    else
-      echo "Skip missing T1w for ${subid} ${sesid}" >&2
-    fi
-  done
   mv "${tmp_list}" "${SUBLIST}"
 fi
 
