@@ -24,3 +24,22 @@ python src/preprocess/export_morphology_tables.py \
   --subject_info_sc /ibmgpfs/cuizaixu_lab/xuhaoshu/projects/sc_connectome_trajectories/data/ABCD/table/subject_info_sc.csv \
   --out_success /ibmgpfs/cuizaixu_lab/xuhaoshu/projects/sc_connectome_trajectories/data/ABCD/table/subject_info_morphology_success.csv \
   --out_missing /ibmgpfs/cuizaixu_lab/xuhaoshu/projects/sc_connectome_trajectories/data/ABCD/table/subject_info_sc_without_morphology.csv
+
+## train models
+
+### vector LSTM baseline
+python src/train.py \
+  --sc_dir /path/to/sc_connectome/schaefer400 \
+  --results_dir /path/to/results
+
+### CLG-ODE
+python src/train_clg_ode.py \
+  --sc_dir /path/to/sc_connectome/schaefer400 \
+  --morph_root /path/to/morphology \
+  --subject_info_csv /path/to/subject_info_sc.csv \
+  --results_dir /path/to/results
+
+Notes:
+- CLG-ODE expects morphology CSVs named like `Schaefer400_Morphology_<subid>.csv` under `--morph_root`.
+- The trainer uses the `age`, `sex`, and `siteid` columns in `subject_info_sc.csv`.
+- Topology loss is a stub by default; plug in a PH loss implementation in `src/engine/losses.py` if needed.
