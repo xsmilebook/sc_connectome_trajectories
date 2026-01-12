@@ -1,0 +1,68 @@
+import os
+from typing import List, Tuple, Dict
+
+import numpy as np
+import pandas as pd
+
+
+def ensure_dir(path: str) -> None:
+    if not os.path.exists(path):
+        os.makedirs(path, exist_ok=True)
+
+
+def parse_subject_session(filename: str) -> Tuple[str, str]:
+    base = os.path.splitext(os.path.basename(filename))[0]
+    if "_ses-" in base:
+        parts = base.split("_ses-")
+        subject_id = parts[0]
+        session_id = "ses-" + parts[1]
+    else:
+        subject_id = base
+        session_id = ""
+    return subject_id, session_id
+
+
+def session_sort_key(session_id: str) -> Tuple[int, str]:
+    priority = {
+        "ses-baselineYear1Arm1": 0,
+        "ses-2YearFollowUpYArm1": 1,
+        "ses-4YearFollowUpYArm1": 2,
+    }
+    if session_id in priority:
+        return priority[session_id], session_id
+    return 999, session_id
+
+
+def list_subject_sequences(sc_dir: str, min_length: int = 2) -> List[Tuple[str, List[str]]]:
+    all_files = [f for f in os.listdir(sc_dir) if f.endswith(".csv")]
+    subject_to_sessions: Dict[str, List[Tuple[str, str]]] = {}
+    for fname in all_files:
+        fpath = os.path.join(sc_dir, fname)
+        sid, ses = parse_subject_session(fname)
+        subject_to_sessions.setdefault(sid, []).append((ses, fpath))
+    sequences: List[Tuple[str, List[str]]] = []
+    for sid, ses_list in subject_to_sessions.items():
+        ses_list_sorted = sorted(ses_list, key=lambda x: session_sort_key(x[0]))
+        paths = [p for _, p in ses_list_sorted]
+        sequences.append((sid, paths))
+    sequences = [s for s in sequences if len(s[1]) >= min_length]
+    sequences.sort(key=lambda x: x[0])
+    return sequences
+
+
+def load_matrix(path: str, max_nodes: int = 400) -> np.ndarray:
+    arr = pd.read_csv(path, header=None).values
+    n0, n1 = arr.shape
+    n = min(max_nodes, n0, n1)
+    arr = arr[:n, :n].astype(np.float32)
+    return arr
+
+
+def flatten_upper_triangle(mat: np.ndarray, triu_idx: Tuple[np.ndarray, np.ndarray]) -> np.ndarray:
+    return mat[triu_idx].astype(np.float32)
+
+
+def compute_triu_indices(n_nodes: int) -> Tuple[np.ndarray, np.ndarray]:
+    idx = np.triu_indices(n_nodes, k=1)
+    return idx[0], idx[1]
+
