@@ -20,7 +20,7 @@ local:
     # - rh.Schaefer2018_400Parcels_17Networks_order.annot
     #
     # Recommended: store atlas files under `data/external/` (ignored by Git).
-    schaefer400_annot_dir: data/external/atlas/schaefer2018/fsaverage/label
+    schaefer400_annot_dir: data/raw/atlas
   outputs:
     logs: outputs/logs
     results: outputs/results
