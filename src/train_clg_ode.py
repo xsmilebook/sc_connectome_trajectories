@@ -13,7 +13,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=os.path.join(
             project_root,
             "data",
-            "ABCD",
+            "processed",
             "sc_connectome",
             "schaefer400",
         ),
@@ -24,7 +24,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=os.path.join(
             project_root,
             "data",
-            "ABCD",
+            "processed",
             "morphology",
         ),
     )
@@ -34,7 +34,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=os.path.join(
             project_root,
             "data",
-            "ABCD",
+            "processed",
             "table",
             "subject_info_sc.csv",
         ),
@@ -44,9 +44,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
         type=str,
         default=os.path.join(
             project_root,
-            "data",
-            "ABCD",
+            "outputs",
             "results",
+            "clg_ode",
         ),
     )
     parser.add_argument("--latent_dim", type=int, default=64)

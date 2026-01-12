@@ -9,7 +9,7 @@
 - 2026-01-12: Tagged and backed up the original `src/` repo as `src-pre-root-migration-20260112.bundle`.
 - 2026-01-12: Initialized a new root Git repo and committed root docs + current `src/` snapshot.
 - 2026-01-12: Removed nested `src/.git` so `src/` is now a normal directory in the root repo.
-- 2026-01-12: Reorganized runtime `data/ABCD/` into `data/interim/ABCD/` + `data/processed/ABCD/` and moved figures/results under `outputs/`.
+- 2026-01-12: Reorganized runtime data into the single-dataset layout (`data/interim/`, `data/processed/`) and moved figures/results under `outputs/`.
 - 2026-01-12: Imported the full legacy `src` commit history into the root repo (rewritten under the `src/` prefix).
 
 ## In progress

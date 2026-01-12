@@ -110,22 +110,22 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--morph_root",
         type=str,
-        default=os.path.join(project_root, "data", "ABCD", "morphology"),
+        default=os.path.join(project_root, "data", "processed", "morphology"),
     )
     p.add_argument(
         "--subject_info_sc",
         type=str,
-        default=os.path.join(project_root, "data", "ABCD", "table", "subject_info_sc.csv"),
+        default=os.path.join(project_root, "data", "processed", "table", "subject_info_sc.csv"),
     )
     p.add_argument(
         "--out_success",
         type=str,
-        default=os.path.join(project_root, "data", "ABCD", "table", "subject_info_morphology_success.csv"),
+        default=os.path.join(project_root, "data", "processed", "table", "subject_info_morphology_success.csv"),
     )
     p.add_argument(
         "--out_missing",
         type=str,
-        default=os.path.join(project_root, "data", "ABCD", "table", "subject_info_sc_without_morphology.csv"),
+        default=os.path.join(project_root, "data", "processed", "table", "subject_info_sc_without_morphology.csv"),
     )
     return p
 

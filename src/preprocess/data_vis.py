@@ -4,7 +4,7 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 
 
-sc_path = r"data\processed\ABCD\sc_connectome\schaefer400\sub-NDARINV0A4ZDYNL_ses-2YearFollowUpYArm1.csv"
+sc_path = r"data\processed\sc_connectome\schaefer400\sub-NDARINV0A4ZDYNL_ses-2YearFollowUpYArm1.csv"
 
 # 读取为纯数值数组
 data = pd.read_csv(sc_path, header=None, index_col=None).values

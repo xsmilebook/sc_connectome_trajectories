@@ -14,7 +14,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=os.path.join(
             project_root,
             "data",
-            "ABCD",
+            "processed",
             "sc_connectome",
             "schaefer400",
         ),
@@ -24,9 +24,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
         type=str,
         default=os.path.join(
             project_root,
-            "data",
-            "ABCD",
+            "outputs",
             "results",
+            "vector_lstm",
         ),
     )
     parser.add_argument("--latent_dim", type=int, default=512)

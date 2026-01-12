@@ -1,20 +1,20 @@
 # 文档索引
 
-本目录包含 `data_driven_EF` 项目的人类可读文档。
+本目录包含 `sc_connectome_trajectories` 项目的方法、流程与决策记录。除根目录文档外，本仓库约定 `docs/` 下内容使用中文撰写。
 
 ## 关键文件
 
-- `docs/workflow.md`: 如何运行流程。
-- `docs/methods.md`: 方法学说明（面向论文；可能不完整）。
-- `docs/data_dictionary.md`: 术语/字段说明（仍在完善）。
-- `docs/reports/`: 研究计划与总结。
+- `docs/workflow.md`: 可复现实验与数据流转约定（单数据集；`data/` 下不再按数据集名称分子目录）。
+- `docs/methods.md`: 模型与训练/评估口径（面向方法学一致性）。
+- `docs/data_dictionary.md`: 关键表格与文件格式索引（字段/命名约定）。
+- `docs/research/research_plan.md`: 研究计划与阶段性设想（可能与实现存在时间差）。
 
-## Notes 与 sessions 的区别
+## sessions 与 notes
 
-- `docs/sessions/`: 按时间记录的会话日志（AI/开发会话）。
-- `docs/notes/`: 用户随手记录与自由想法。
+- `docs/sessions/`: 按日期记录的会话日志（变更原因、影响范围、回滚方式）。
+- `docs/notes/`: 用户随手记录与自由想法（不保证结构化）。
 
-## 日志
+## 运行日志与产物
 
-- 所有运行时日志存放在 `outputs/logs/`。
-- 按任务组织日志文件（如 `outputs/logs/real_adaptive_pls/`）。
+- 运行日志建议写入 `outputs/logs/`。
+- 结果与图表建议写入 `outputs/results/` 与 `outputs/figures/`。
