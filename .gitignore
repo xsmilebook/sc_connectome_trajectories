@@ -1,21 +1,21 @@
 # ===== data (do not commit) =====
-data/raw/
-data/external/
-data/interim/
-data/processed/
+/data/raw/
+/data/external/
+/data/interim/
+/data/processed/
 
 # keep small metadata docs if needed
 !data/README.md
 
 # ===== outputs (do not commit, allow final if you want) =====
-outputs/
+/outputs/
 
 # notebooks & models (runtime artifacts)
-notebooks/
-models/
+/notebooks/
+/models/
 
 # tmp
-tmp/
+/tmp/
 *.log
 
 # python
@@ -24,4 +24,3 @@ __pycache__/
 
 # jupyter
 .ipynb_checkpoints/
-
