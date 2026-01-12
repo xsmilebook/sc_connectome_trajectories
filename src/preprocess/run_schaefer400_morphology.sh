@@ -4,8 +4,8 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
 #SBATCH --partition=q_fat_c
-#SBATCH --output=/ibmgpfs/cuizaixu_lab/xuhaoshu/projects/sc_connectome_trajectories/logs/morph/schaefer400_morph_%A_%a.log
-#SBATCH --error=/ibmgpfs/cuizaixu_lab/xuhaoshu/projects/sc_connectome_trajectories/logs/morph/schaefer400_morph_%A_%a.err
+#SBATCH --output=/ibmgpfs/cuizaixu_lab/xuhaoshu/projects/sc_connectome_trajectories/outputs/logs/morph/schaefer400_morph_%A_%a.log
+#SBATCH --error=/ibmgpfs/cuizaixu_lab/xuhaoshu/projects/sc_connectome_trajectories/outputs/logs/morph/schaefer400_morph_%A_%a.err
 
 set -euo pipefail
 
@@ -28,7 +28,7 @@ if [[ -z "${ATLAS_DIR}" ]]; then
   exit 1
 fi
 if [[ -z "${OUTPUT_DIR}" ]]; then
-  echo "ERROR: OUTPUT_DIR is empty. Set OUTPUT_DIR to a writable results folder under ABCD." >&2
+  echo "ERROR: OUTPUT_DIR is empty. Set OUTPUT_DIR to a writable folder (recommended under data/processed/ or outputs/results/)." >&2
   exit 1
 fi
 if [[ ! -f "${SUBLIST}" ]]; then

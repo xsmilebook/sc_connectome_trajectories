@@ -9,6 +9,7 @@ from torch.utils.data import DataLoader
 
 from src.models.vector_lstm import VectorLSTM
 from src.engine.trainer import Trainer
+from src.configs.paths import ensure_outputs_logs
 from src.data.utils import (
     list_subject_sequences,
     compute_triu_indices,
@@ -163,6 +164,7 @@ def _timepoint_eval(
 
 
 def main() -> None:
+    ensure_outputs_logs()
     parser = build_arg_parser()
     args = parser.parse_args()
     sequences = list_subject_sequences(args.sc_dir)

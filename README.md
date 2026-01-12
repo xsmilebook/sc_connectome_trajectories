@@ -9,6 +9,8 @@ subjects without processed freesurfer: /ibmgpfs/cuizaixu_lab/Public_Data/ABCD_20
 N=$(find /GPFS/cuizaixu_lab_permanent/xuhaoshu/ABCD/raw_data/smri -type f -name "*_T1w.nii" | wc -l)
 sbatch --array=1-${N} src/preprocess/freesurfer.sh
 
+HPC paths and local defaults are configured in `configs/paths.yaml` (the FreeSurfer `/GPFS/.../ABCD/...` roots are intentionally kept as absolute paths).
+
 ## run morph
 export ATLAS_DIR="/ibmgpfs/cuizaixu_lab/xuhaoshu/projects/sc_connectome_trajectories/data/atlas"
 export OUTPUT_DIR="/ibmgpfs/cuizaixu_lab/xuhaoshu/projects/sc_connectome_trajectories/data/processed/morphology/4YearFollowUpYArm1/SIEMENS"

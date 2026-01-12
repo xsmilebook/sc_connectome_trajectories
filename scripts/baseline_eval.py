@@ -9,6 +9,7 @@ from src.data.utils import (
     load_matrix,
     compute_triu_indices,
 )
+from src.configs.paths import ensure_outputs_logs
 
 
 def collect_session_pairs(sc_dir: str) -> Tuple[List[Tuple[str, str]], List[Tuple[str, str]]]:
@@ -62,6 +63,7 @@ def compute_metrics(pairs: List[Tuple[str, str]]) -> Tuple[float, float]:
 
 
 def main() -> None:
+    ensure_outputs_logs()
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     sc_dir = os.path.join(project_root, "data", "processed", "sc_connectome", "schaefer400")
     pairs_y2, pairs_y4 = collect_session_pairs(sc_dir)

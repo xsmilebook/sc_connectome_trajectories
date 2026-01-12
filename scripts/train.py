@@ -3,6 +3,7 @@ import argparse
 
 from src.models.vector_lstm import VectorLSTM
 from src.engine.trainer import Trainer
+from src.configs.paths import ensure_outputs_logs
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -39,6 +40,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    ensure_outputs_logs()
     parser = build_arg_parser()
     args = parser.parse_args()
     trainer = Trainer(

@@ -2,6 +2,7 @@ import os
 import argparse
 
 from src.engine.clg_trainer import CLGTrainer
+from src.configs.paths import ensure_outputs_logs
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -65,6 +66,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    ensure_outputs_logs()
     parser = build_arg_parser()
     args = parser.parse_args()
     trainer = CLGTrainer(

@@ -1,0 +1,26 @@
+# Path registry for sc_connectome_trajectories.
+#
+# Design:
+# - Keep FreeSurfer-related data roots on HPC as absolute `/GPFS/.../ABCD/...` paths (do not migrate).
+# - Keep project-managed artifacts as repo-relative paths: `data/raw`, `data/interim`, `data/processed`, `outputs/...`.
+#
+# Notes:
+# - This project uses a single dataset (ABCD) but does not include an `ABCD/` directory layer under `data/`.
+# - Bash entrypoints can read this file via: `python -m scripts.render_paths ...`.
+
+local:
+  data:
+    raw: data/raw
+    external: data/external
+    interim: data/interim
+    processed: data/processed
+  outputs:
+    logs: outputs/logs
+    results: outputs/results
+    figures: outputs/figures
+
+hpc:
+  freesurfer:
+    bids_root: /GPFS/cuizaixu_lab_permanent/xuhaoshu/ABCD/raw_data/smri
+    freesurfer_root: /GPFS/cuizaixu_lab_permanent/xuhaoshu/ABCD/processed/freesurfer
+    slurm_logs_root: /GPFS/cuizaixu_lab_permanent/xuhaoshu/ABCD/logs/freesurfer

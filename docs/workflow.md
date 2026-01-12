@@ -9,6 +9,14 @@
 - `data/processed/`: 可复用的处理后数据（建模的稳定输入；例如 SC、形态学表格）
 - `outputs/`: 运行产物（训练结果、图表、日志等）
 
+## 配置（configs/）
+
+本项目使用 `configs/paths.yaml` 作为路径注册表：
+
+- FreeSurfer 相关的大体量数据根目录保留为 HPC 上的绝对路径（例如 `/GPFS/.../ABCD/...`），**不要求迁移**。
+- 仓库内可管理的默认路径使用相对路径（`data/raw`、`data/interim`、`data/processed`、`outputs/logs` 等）。
+- Bash 脚本可通过 `python -m scripts.render_paths ...` 读取 `configs/paths.yaml` 并导出环境变量。
+
 推荐（但不强制）的子目录示例：
 
 - `data/interim/freesurfer/`: FreeSurfer `SUBJECTS_DIR`

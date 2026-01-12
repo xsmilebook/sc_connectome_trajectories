@@ -9,15 +9,27 @@ set -euo pipefail
 
 module load freesurfer
 
-# User inputs
-BIDS_ROOT="${BIDS_ROOT:-/GPFS/cuizaixu_lab_permanent/xuhaoshu/ABCD/raw_data/smri}"
-FREESURFER_ROOT="${FREESURFER_ROOT:-/GPFS/cuizaixu_lab_permanent/xuhaoshu/ABCD/processed/freesurfer}"
+CONFIG_PATH="${CONFIG_PATH:-configs/paths.yaml}"
+
+# Local (repo-managed) defaults
+eval "$(python -m scripts.render_paths --config "${CONFIG_PATH}" --format bash --resolve --set \
+  OUTPUTS_LOGS=local.outputs.logs \
+  DATA_PROCESSED=local.data.processed \
+)"
+
+# HPC-only FreeSurfer roots (do not migrate)
+eval "$(python -m scripts.render_paths --config "${CONFIG_PATH}" --format bash --set \
+  BIDS_ROOT=hpc.freesurfer.bids_root \
+  FREESURFER_ROOT=hpc.freesurfer.freesurfer_root \
+)"
+
 NTHREADS="${NTHREADS:-8}"
-SUBJECT_CSV="${SUBJECT_CSV:-/ibmgpfs/cuizaixu_lab/xuhaoshu/projects/sc_connectome_trajectories/data/processed/table/subject_info_sc_without_morphology.csv}"
+SUBJECT_CSV="${SUBJECT_CSV:-${DATA_PROCESSED}/table/subject_info_sc_without_morphology.csv}"
+mkdir -p "${OUTPUTS_LOGS}/freesurfer"
 
 SUBLIST="${1:-${SUBLIST:-}}"
 if [[ -z "${SUBLIST}" ]]; then
-  SUBLIST="${SLURM_SUBMIT_DIR:-$(pwd)}/sublist_freesurfer_from_csv.txt"
+  SUBLIST="${OUTPUTS_LOGS}/freesurfer/sublist_freesurfer_from_csv.txt"
 fi
 if [[ ! -f "${SUBJECT_CSV}" ]]; then
   echo "ERROR: subject CSV not found: ${SUBJECT_CSV}" >&2
