@@ -14,6 +14,13 @@ local:
     external: data/external
     interim: data/interim
     processed: data/processed
+  atlas:
+    # Directory containing:
+    # - lh.Schaefer2018_400Parcels_17Networks_order.annot
+    # - rh.Schaefer2018_400Parcels_17Networks_order.annot
+    #
+    # Recommended: store atlas files under `data/external/` (ignored by Git).
+    schaefer400_annot_dir: data/external/atlas/schaefer2018/fsaverage/label
   outputs:
     logs: outputs/logs
     results: outputs/results

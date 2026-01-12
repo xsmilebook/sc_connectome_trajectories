@@ -12,8 +12,12 @@ sbatch --array=1-${N} src/preprocess/freesurfer.sh
 HPC paths and local defaults are configured in `configs/paths.yaml` (the FreeSurfer `/GPFS/.../ABCD/...` roots are intentionally kept as absolute paths).
 
 ## run morph
-export ATLAS_DIR="/ibmgpfs/cuizaixu_lab/xuhaoshu/projects/sc_connectome_trajectories/data/atlas"
+export ATLAS_DIR="/path/to/schaefer2018/fsaverage/label"
 export OUTPUT_DIR="/ibmgpfs/cuizaixu_lab/xuhaoshu/projects/sc_connectome_trajectories/data/processed/morphology/4YearFollowUpYArm1/SIEMENS"
+
+Atlas note:
+- `ATLAS_DIR` must contain `lh.Schaefer2018_400Parcels_17Networks_order.annot` and `rh.Schaefer2018_400Parcels_17Networks_order.annot`.
+- The default atlas directory can be set in `configs/paths.yaml` under `local.atlas.schaefer400_annot_dir`.
 
 sbatch --export=ALL,SUBJECTS_DIR="/GPFS/cuizaixu_lab_permanent/xuxiaoyu/ABCD/processed/freesurfer/baselineYear1Arm1/SIEMENS/site14",ATLAS_DIR="${ATLAS_DIR}",OUTPUT_DIR="${OUTPUT_DIR}",SITE_NAME="site14" --array=1-100 run_schaefer400_morphology.sh /path/to/sublist.txt
 

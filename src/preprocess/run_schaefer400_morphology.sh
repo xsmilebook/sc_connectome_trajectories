@@ -10,6 +10,7 @@
 set -euo pipefail
 
 SUBJECTS_DIR_IN="${SUBJECTS_DIR:-}"
+CONFIG_PATH="${CONFIG_PATH:-configs/paths.yaml}"
 
 module load freesurfer/7.1.1
 
@@ -18,6 +19,18 @@ ATLAS_DIR="${ATLAS_DIR:-}"
 SUBJECTS_DIR="${SUBJECTS_DIR_IN:-${FREESURFER_DATA:-${SUBJECTS_DIR:-}}}"
 OUTPUT_DIR="${OUTPUT_DIR:-}"
 export SUBJECTS_DIR
+
+if [[ -z "${ATLAS_DIR}" ]]; then
+  eval "$(python -m scripts.render_paths --config "${CONFIG_PATH}" --format bash --resolve --set \
+    ATLAS_DIR=local.atlas.schaefer400_annot_dir \
+  )"
+fi
+if [[ -z "${OUTPUT_DIR}" ]]; then
+  eval "$(python -m scripts.render_paths --config "${CONFIG_PATH}" --format bash --resolve --set \
+    DATA_PROCESSED=local.data.processed \
+  )"
+  OUTPUT_DIR="${DATA_PROCESSED}/morphology"
+fi
 
 if [[ -z "${SUBJECTS_DIR}" ]]; then
   echo "ERROR: SUBJECTS_DIR is empty. Set SUBJECTS_DIR or FREESURFER_DATA." >&2

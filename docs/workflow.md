@@ -17,6 +17,15 @@
 - 仓库内可管理的默认路径使用相对路径（`data/raw`、`data/interim`、`data/processed`、`outputs/logs` 等）。
 - Bash 脚本可通过 `python -m scripts.render_paths ...` 读取 `configs/paths.yaml` 并导出环境变量。
 
+## Atlas（Schaefer annot）
+
+形态学提取需要 Schaefer2018 的 FreeSurfer `fsaverage` `.annot` 文件（左右半球各 1 个）。请确保 `ATLAS_DIR` 指向包含以下文件的目录：
+
+- `lh.Schaefer2018_400Parcels_17Networks_order.annot`
+- `rh.Schaefer2018_400Parcels_17Networks_order.annot`
+
+建议将 atlas 文件放在 `data/external/atlas/`（Git 会忽略），并在 `configs/paths.yaml` 配置 `local.atlas.schaefer400_annot_dir`。HPC 脚本（如 `src/preprocess/run_schaefer400_morphology.sh`）会在未显式提供 `ATLAS_DIR` 时从该配置读取默认值。
+
 推荐（但不强制）的子目录示例：
 
 - `data/interim/freesurfer/`: FreeSurfer `SUBJECTS_DIR`

@@ -70,9 +70,27 @@ def detect_annot_paths(atlas_dir: str, annot_basename: str) -> Dict[str, str]:
     lh = os.path.join(atlas_dir, f"lh.{annot_basename}")
     rh = os.path.join(atlas_dir, f"rh.{annot_basename}")
     if not os.path.exists(lh):
-        raise FileNotFoundError(f"Missing atlas annot: {lh}")
+        raise FileNotFoundError(
+            "Missing atlas annot. Expected Schaefer fsaverage annot files under --atlas_dir / $ATLAS_DIR.\n"
+            f"- Missing: {lh}\n"
+            "Fix:\n"
+            "- Put the files under the configured directory in `configs/paths.yaml` "
+            "(`local.atlas.schaefer400_annot_dir`), or pass `--atlas_dir` explicitly.\n"
+            "- Required files:\n"
+            f"  - lh.{annot_basename}\n"
+            f"  - rh.{annot_basename}\n"
+        )
     if not os.path.exists(rh):
-        raise FileNotFoundError(f"Missing atlas annot: {rh}")
+        raise FileNotFoundError(
+            "Missing atlas annot. Expected Schaefer fsaverage annot files under --atlas_dir / $ATLAS_DIR.\n"
+            f"- Missing: {rh}\n"
+            "Fix:\n"
+            "- Put the files under the configured directory in `configs/paths.yaml` "
+            "(`local.atlas.schaefer400_annot_dir`), or pass `--atlas_dir` explicitly.\n"
+            "- Required files:\n"
+            f"  - lh.{annot_basename}\n"
+            f"  - rh.{annot_basename}\n"
+        )
     return {"lh": lh, "rh": rh}
 
 
