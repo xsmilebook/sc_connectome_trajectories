@@ -35,8 +35,8 @@
 
 ### 形态学（Schaefer400 Morphology）
 
-- `--morph_root` 下递归查找形如 `Schaefer400_Morphology_<subid>.csv` 的文件（见 `src/preprocess/export_morphology_tables.py`）。
-- 该文件的生成可使用 `src/preprocess/extract_schaefer400_morphology.py`（依赖 FreeSurfer 命令行工具链）。
+- `--morph_root` 下递归查找形如 `Schaefer400_Morphology_<subid>.csv` 的文件（实现见 `src/preprocess/export_morphology_tables.py`；入口为 `python -m scripts.export_morphology_tables`）。
+- 该文件的生成可使用 `python -m scripts.extract_schaefer400_morphology`（实现见 `src/preprocess/extract_schaefer400_morphology.py`；依赖 FreeSurfer 命令行工具链）。
 
 ### 被试信息表（subject_info_sc.csv）
 
@@ -52,11 +52,11 @@ CLG-ODE 训练需要 `--subject_info_csv`，建议放在 `data/processed/table/s
    - 建议将 `SUBJECTS_DIR` 指向 `data/interim/freesurfer/`
 
 2) 提取 Schaefer400 形态学（可选）
-   - 入口：`python src/preprocess/extract_schaefer400_morphology.py ...`
+   - 入口：`python -m scripts.extract_schaefer400_morphology ...`
    - 生成 `Schaefer400_Morphology_<subid>.csv` 后，将其放入 `data/processed/morphology/`（或其子目录）
 
 3) 汇总形态学覆盖情况（可选）
-   - 入口：`python src/preprocess/export_morphology_tables.py ...`
+   - 入口：`python -m scripts.export_morphology_tables ...`
    - 输出建议写入 `data/processed/table/`
 
 ## 训练与结果输出
@@ -64,7 +64,7 @@ CLG-ODE 训练需要 `--subject_info_csv`，建议放在 `data/processed/table/s
 ### VectorLSTM baseline
 
 ```bash
-python src/train.py \
+python -m scripts.train \
   --sc_dir data/processed/sc_connectome/schaefer400 \
   --results_dir outputs/results/vector_lstm
 ```
@@ -72,7 +72,7 @@ python src/train.py \
 ### CLG-ODE
 
 ```bash
-python src/train_clg_ode.py \
+python -m scripts.train_clg_ode \
   --sc_dir data/processed/sc_connectome/schaefer400 \
   --morph_root data/processed/morphology \
   --subject_info_csv data/processed/table/subject_info_sc.csv \
@@ -87,4 +87,3 @@ python src/train_clg_ode.py \
 ## 更新说明
 
 当目录约定或关键输入输出路径变更时，请在 `docs/sessions/` 记录变更内容、原因与影响范围。
-

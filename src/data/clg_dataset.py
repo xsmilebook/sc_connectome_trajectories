@@ -8,12 +8,12 @@ import pandas as pd
 import torch
 from torch.utils.data import Dataset
 
-from data.morphology import (
+from src.data.morphology import (
     build_morph_index,
     infer_roi_metric_order,
     load_morphology_matrix,
 )
-from data.utils import load_matrix, parse_subject_session, list_subject_sequences
+from src.data.utils import load_matrix, parse_subject_session, list_subject_sequences
 
 
 class CLGDataset(Dataset):

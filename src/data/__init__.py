@@ -1,7 +1,7 @@
-from data.dataset import SCDataset, collate_sequences
-from data.clg_dataset import CLGDataset, collate_clg_sequences
-from data.morphology import build_morph_index, load_morphology_matrix
-from data.utils import (
+from src.data.dataset import SCDataset, collate_sequences
+from src.data.clg_dataset import CLGDataset, collate_clg_sequences
+from src.data.morphology import build_morph_index, load_morphology_matrix
+from src.data.utils import (
     compute_triu_indices,
     ensure_dir,
     list_subject_sequences,

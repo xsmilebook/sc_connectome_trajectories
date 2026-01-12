@@ -4,7 +4,7 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 
-from data.utils import load_matrix, flatten_upper_triangle
+from src.data.utils import load_matrix, flatten_upper_triangle
 
 
 class SCDataset(Dataset):

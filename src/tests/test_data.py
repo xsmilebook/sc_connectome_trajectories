@@ -2,7 +2,7 @@ from unittest.mock import patch
 
 import numpy as np
 
-from data.dataset import SCDataset, collate_sequences
+from src.data.dataset import SCDataset, collate_sequences
 
 
 def test_sc_dataset_sequence_shapes():
@@ -14,7 +14,7 @@ def test_sc_dataset_sequence_shapes():
     def fake_load_matrix(path, max_nodes=400):
         return np.ones((4, 4), dtype=np.float32)
 
-    with patch("data.dataset.load_matrix", side_effect=fake_load_matrix):
+    with patch("src.data.dataset.load_matrix", side_effect=fake_load_matrix):
         ds = SCDataset(sequences, triu_idx)
         item = ds[0]
         assert item["x"].shape[0] == 2

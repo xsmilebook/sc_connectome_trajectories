@@ -12,14 +12,14 @@
 
 ### 1) VectorLSTM baseline
 
-代码：`src/models/vector_lstm.py`，训练入口：`src/train.py`。
+代码：`src/models/vector_lstm.py`，训练入口：`scripts/train.py`（推荐 `python -m scripts.train`）。
 
 - 将每个时间点的 SC 矩阵向量化为上三角特征（见 `src/data/dataset.py` 与 `src/data/utils.py`）。
 - 线性层 + ReLU 编码后输入 LSTM，最后解码回同维度特征，优化目标为预测序列的下一时刻特征（MSE）。
 
 ### 2) CLG-ODE（Coupled Latent Graph Neural ODE）
 
-代码：`src/models/clg_ode.py`，训练入口：`src/train_clg_ode.py`，训练器：`src/engine/clg_trainer.py`。
+代码：`src/models/clg_ode.py`，训练入口：`scripts/train_clg_ode.py`（推荐 `python -m scripts.train_clg_ode`），训练器：`src/engine/clg_trainer.py`。
 
 高层结构：
 
@@ -47,4 +47,3 @@
 
 - 以验证集损失为准进行早停（`patience`）。
 - 输出建议写入 `outputs/results/<model_name>/`，包含 `.pt` 权重与 JSON 摘要。
-

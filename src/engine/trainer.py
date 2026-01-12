@@ -12,8 +12,8 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader
 
-from data.dataset import SCDataset, collate_sequences
-from data.utils import ensure_dir, compute_triu_indices, list_subject_sequences
+from src.data.dataset import SCDataset, collate_sequences
+from src.data.utils import ensure_dir, compute_triu_indices, list_subject_sequences
 
 
 class Trainer:

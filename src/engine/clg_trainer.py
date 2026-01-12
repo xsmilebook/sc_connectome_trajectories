@@ -12,10 +12,10 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader, Subset
 
-from data.clg_dataset import CLGDataset, collate_clg_sequences
-from data.utils import compute_triu_indices, ensure_dir
-from engine.losses import topology_loss
-from models.clg_ode import CLGODE
+from src.data.clg_dataset import CLGDataset, collate_clg_sequences
+from src.data.utils import compute_triu_indices, ensure_dir
+from src.engine.losses import topology_loss
+from src.models.clg_ode import CLGODE
 
 
 class CLGTrainer:

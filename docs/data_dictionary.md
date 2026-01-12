@@ -38,7 +38,7 @@
 
 - `Schaefer400_Morphology_<subid>.csv`
 
-`src/preprocess/export_morphology_tables.py` 会在 `--morph_root` 下递归查找该命名模式，并推断：
+`python -m scripts.export_morphology_tables`（实现见 `src/preprocess/export_morphology_tables.py`）会在 `--morph_root` 下递归查找该命名模式，并推断：
 
 - `subid`：从文件名提取（`sub-...`）
 - `sesid`/`siteid`：从路径字符串中推断（存在不确定性，建议最终以 `subject_info_sc.csv` 为准）
@@ -68,4 +68,3 @@
 
 - `subject_info_morphology_success.csv`: 成功提取形态学的 `scanid` 列表与基础字段
 - `subject_info_sc_without_morphology.csv`: SC 具备但形态学缺失的条目（用于补算/排查）
-

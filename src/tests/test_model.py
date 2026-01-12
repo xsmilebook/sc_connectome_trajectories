@@ -1,6 +1,6 @@
 import torch
 
-from models.vector_lstm import VectorLSTM
+from src.models.vector_lstm import VectorLSTM
 
 
 def test_vector_lstm_output_shape():

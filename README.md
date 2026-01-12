@@ -19,7 +19,7 @@ mkdir -p /ibmgpfs/cuizaixu_lab/xuhaoshu/projects/sc_connectome_trajectories/data
 bash submit_schaefer400_morphology_all_sites.sh /GPFS/cuizaixu_lab_permanent/xuxiaoyu/ABCD/processed/freesurfer/4YearFollowUpYArm1/SIEMENS /ibmgpfs/cuizaixu_lab/xuhaoshu/projects/sc_connectome_trajectories/data/processed/table/sublist_by_site/4YearFollowUpYArm1 ./run_schaefer400_morphology.sh
 
 ## summarize morph
-python src/preprocess/export_morphology_tables.py \
+python -m scripts.export_morphology_tables \
   --morph_root /ibmgpfs/cuizaixu_lab/xuhaoshu/projects/sc_connectome_trajectories/data/processed/morphology \
   --subject_info_sc /ibmgpfs/cuizaixu_lab/xuhaoshu/projects/sc_connectome_trajectories/data/processed/table/subject_info_sc.csv \
   --out_success /ibmgpfs/cuizaixu_lab/xuhaoshu/projects/sc_connectome_trajectories/data/processed/table/subject_info_morphology_success.csv \
@@ -28,12 +28,12 @@ python src/preprocess/export_morphology_tables.py \
 ## train models
 
 ### vector LSTM baseline
-python src/train.py \
+python -m scripts.train \
   --sc_dir /path/to/sc_connectome/schaefer400 \
   --results_dir /path/to/results
 
 ### CLG-ODE
-python src/train_clg_ode.py \
+python -m scripts.train_clg_ode \
   --sc_dir /path/to/sc_connectome/schaefer400 \
   --morph_root /path/to/morphology \
   --subject_info_csv /path/to/subject_info_sc.csv \
