@@ -2,15 +2,19 @@
 
 
 ## Current focus
-- 2026-01-12: Plan the migration of the Git repo from `src/` to the project root (see `PLAN.md`).
+- 2026-01-12: Make the project root the Git repository root (migrate from `src/`).
 
 ## Completed
 - 2026-01-12: Drafted the repo-structure refactor plan in `PLAN.md`.
+- 2026-01-12: Tagged and backed up the original `src/` repo as `src-pre-root-migration-20260112.bundle`.
+- 2026-01-12: Initialized a new root Git repo and committed root docs + current `src/` snapshot.
+- 2026-01-12: Removed nested `src/.git` so `src/` is now a normal directory in the root repo.
 
 ## In progress
 
 ## Next up
-- Execute the repo migration steps once the open questions in `PLAN.md` are confirmed.
+- Push the new root repo to `origin` (may require forced push depending on the remote state).
+- Decide whether to import full historical commits from the old `src/` repo into the root repo (optional; bundle available).
 
 ## Issues and solutions
 
