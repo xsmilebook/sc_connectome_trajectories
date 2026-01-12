@@ -13,7 +13,7 @@ module load freesurfer
 BIDS_ROOT="${BIDS_ROOT:-/GPFS/cuizaixu_lab_permanent/xuhaoshu/ABCD/raw_data/smri}"
 FREESURFER_ROOT="${FREESURFER_ROOT:-/GPFS/cuizaixu_lab_permanent/xuhaoshu/ABCD/processed/freesurfer}"
 NTHREADS="${NTHREADS:-8}"
-SUBJECT_CSV="${SUBJECT_CSV:-/ibmgpfs/cuizaixu_lab/xuhaoshu/projects/sc_connectome_trajectories/data/ABCD/table/subject_info_sc_without_morphology.csv}"
+SUBJECT_CSV="${SUBJECT_CSV:-/ibmgpfs/cuizaixu_lab/xuhaoshu/projects/sc_connectome_trajectories/data/processed/ABCD/table/subject_info_sc_without_morphology.csv}"
 
 SUBLIST="${1:-${SUBLIST:-}}"
 if [[ -z "${SUBLIST}" ]]; then

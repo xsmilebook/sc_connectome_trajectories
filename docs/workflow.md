@@ -27,6 +27,12 @@ EFNY 相关假设配置在 `configs/paths.yaml` 的 `dataset` 段落中。数据
 
 部分外部输入（如 fMRIPrep 输出）可能位于仓库外；请在 `configs/paths.yaml` 的 `dataset.external_inputs` 下配置绝对路径。
 
+当前本地 `ABCD` 数据目录按如下方式组织：
+
+- `data/interim/ABCD/`: 例如 FreeSurfer 等中间产物
+- `data/processed/ABCD/`: 例如 `table/`、`sc_connectome/` 等可复用处理后数据
+- `outputs/figures/ABCD/`、`outputs/results/ABCD/`: 图表与结果
+
 ## 预处理流程（影像与行为）
 
 本节描述推荐的预处理顺序与关键产物，细节以脚本为准。
