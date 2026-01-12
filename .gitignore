@@ -1,0 +1,27 @@
+# ===== data (do not commit) =====
+data/raw/
+data/external/
+data/interim/
+data/processed/
+
+# keep small metadata docs if needed
+!data/README.md
+
+# ===== outputs (do not commit, allow final if you want) =====
+outputs/
+
+# notebooks & models (runtime artifacts)
+notebooks/
+models/
+
+# tmp
+tmp/
+*.log
+
+# python
+__pycache__/
+*.pyc
+
+# jupyter
+.ipynb_checkpoints/
+
