@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH -J freesurfer
 #SBATCH --cpus-per-task=8
-#SBATCH -p q_fat
+#SBATCH -p q_fat_c
 #SBATCH --output=/GPFS/cuizaixu_lab_permanent/xuhaoshu/ABCD/logs/freesurfer/freesurfer_%A_%a.log
 #SBATCH --error=/GPFS/cuizaixu_lab_permanent/xuhaoshu/ABCD/logs/freesurfer/freesurfer_%A_%a.err
 
