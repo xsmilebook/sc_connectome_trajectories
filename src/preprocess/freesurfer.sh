@@ -27,6 +27,8 @@ NTHREADS="${NTHREADS:-8}"
 SUBJECT_CSV="${SUBJECT_CSV:-${DATA_PROCESSED}/table/subject_info_sc_without_morphology.csv}"
 mkdir -p "${OUTPUTS_LOGS}/freesurfer"
 
+FREESURFER_FORCE="${FREESURFER_FORCE:-0}"
+
 SUBLIST="${1:-${SUBLIST:-}}"
 if [[ -z "${SUBLIST}" ]]; then
   SUBLIST="${OUTPUTS_LOGS}/freesurfer/sublist_freesurfer_from_csv.txt"
@@ -107,9 +109,28 @@ SUBJECTS_DIR="${FREESURFER_ROOT}/${sesid}/${machine}/${siteid}"
 export SUBJECTS_DIR
 mkdir -p "${SUBJECTS_DIR}"
 
-if [[ -f "${SUBJECTS_DIR}/${subid}/scripts/recon-all.done" ]]; then
+subj_root="${SUBJECTS_DIR}/${subid}"
+done_file="${subj_root}/scripts/recon-all.done"
+
+is_complete=0
+if [[ -f "${done_file}" ]]; then
+  if [[ -f "${subj_root}/stats/aseg.stats" && -f "${subj_root}/surf/lh.pial" && -f "${subj_root}/surf/rh.pial" ]]; then
+    is_complete=1
+  fi
+fi
+
+if [[ "${FREESURFER_FORCE}" -eq 1 ]]; then
+  echo "Force re-run enabled (FREESURFER_FORCE=1): ${subid} (${sesid}/${machine}/${siteid})"
+  rm -f "${done_file}" "${subj_root}/scripts/IsRunning"* 2>/dev/null || true
+  is_complete=0
+fi
+
+if [[ "${is_complete}" -eq 1 ]]; then
   echo "Skip finished subject: ${subid} (${sesid}/${machine}/${siteid})"
   exit 0
+elif [[ -f "${done_file}" ]]; then
+  echo "Found recon-all.done but outputs look incomplete; re-running: ${subid} (${sesid}/${machine}/${siteid})"
+  rm -f "${done_file}" "${subj_root}/scripts/IsRunning"* 2>/dev/null || true
 fi
 
 echo ""

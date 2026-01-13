@@ -13,6 +13,7 @@
 - 2026-01-12: Imported the full legacy `src` commit history into the root repo (rewritten under the `src/` prefix).
 - 2026-01-12: Added root-level `scripts/` entrypoints and made `src/` importable as a package.
 - 2026-01-12: Added `configs/paths.yaml` and switched defaults to config-managed paths; removed tracked runtime sublists from `src/`.
+- 2026-01-13: Improved FreeSurfer rerun behavior (force rerun and incomplete-done detection).
 
 ## In progress
 

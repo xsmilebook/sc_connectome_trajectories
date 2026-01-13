@@ -11,6 +11,9 @@ sbatch --array=1-${N} src/preprocess/freesurfer.sh
 
 HPC paths and local defaults are configured in `configs/paths.yaml` (the FreeSurfer `/GPFS/.../ABCD/...` roots are intentionally kept as absolute paths).
 
+Rerun note:
+- If a previous run was interrupted but the subject is incorrectly skipped due to a stale `scripts/recon-all.done`, submit with `FREESURFER_FORCE=1` to force re-run.
+
 ## run morph
 export ATLAS_DIR="/ibmgpfs/cuizaixu_lab/xuhaoshu/projects/sc_connectome_trajectories/data/raw/atlas"
 export OUTPUT_DIR="/ibmgpfs/cuizaixu_lab/xuhaoshu/projects/sc_connectome_trajectories/data/processed/morphology/4YearFollowUpYArm1/SIEMENS"

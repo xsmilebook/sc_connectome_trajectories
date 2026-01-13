@@ -67,6 +67,7 @@ CLG-ODE 训练需要 `--subject_info_csv`，建议放在 `data/processed/table/s
 1) FreeSurfer 重建（如果形态学需要）
    - 入口脚本：`src/preprocess/freesurfer.sh`
    - 建议将 `SUBJECTS_DIR` 指向 `data/interim/freesurfer/`
+   - 如遇到作业中断导致“误判完成并跳过”（存在残留 `scripts/recon-all.done`），可在提交时设置 `FREESURFER_FORCE=1` 强制重跑；脚本也会在检测到 `recon-all.done` 但关键产物缺失时自动重跑。
 
 2) 提取 Schaefer400 形态学（可选）
    - 入口：`python -m scripts.extract_schaefer400_morphology ...`
