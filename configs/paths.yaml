@@ -14,6 +14,9 @@ local:
     external: data/external
     interim: data/interim
     processed: data/processed
+    sc_connectome_schaefer400: data/processed/sc_connectome/schaefer400
+    morphology: data/processed/morphology
+    subject_info_sc: data/processed/table/subject_info_sc.csv
   atlas:
     # Directory containing:
     # - lh.Schaefer2018_400Parcels_17Networks_order.annot
@@ -25,6 +28,9 @@ local:
     logs: outputs/logs
     results: outputs/results
     figures: outputs/figures
+    clg_ode: outputs/results/clg_ode
+  containers:
+    torch_gnn: data/external/containers/torch_gnn.sif
 
 hpc:
   freesurfer:

@@ -16,6 +16,7 @@
 - FreeSurfer 相关的大体量数据根目录保留为 HPC 上的绝对路径（例如 `/GPFS/.../ABCD/...`），**不要求迁移**。
 - 仓库内可管理的默认路径使用相对路径（`data/raw`、`data/interim`、`data/processed`、`outputs/logs` 等）。
 - Bash 脚本可通过 `python -m scripts.render_paths ...` 读取 `configs/paths.yaml` 并导出环境变量。
+- CLG-ODE 训练与提交脚本使用以下键：`local.data.sc_connectome_schaefer400`、`local.data.morphology`、`local.data.subject_info_sc`、`local.outputs.clg_ode`、`local.containers.torch_gnn`。
 
 ## Atlas（Schaefer annot）
 
@@ -49,6 +50,13 @@
   - `<subid>_ses-4YearFollowUpYArm1.csv`
 
 时间点排序逻辑见 `src/data/utils.py`（`session_sort_key`）。
+
+CLG-ODE 训练阶段会对 SC 进行以下预处理（不修改原始 CSV 文件）：
+
+- 对称化并清零对角线。
+- 取 `log(1 + A)` 作为模型输入与权重回归的目标域。
+- 不做额外 Top-K 或阈值稀疏化。
+- 基于原始权重域计算全局强度协变量 `s` 与 `s_mean`。
 
 ### 形态学（Schaefer400 Morphology）
 
@@ -104,6 +112,29 @@ python -m scripts.train_clg_ode \
   --morph_root data/processed/morphology \
   --subject_info_csv data/processed/table/subject_info_sc.csv \
   --results_dir outputs/results/clg_ode
+```
+
+训练实现要点（与 `docs/reports/implementation_specification.md` 一致）：
+
+- ODE 使用 `Δt = age(t) - age0`，`age0` 作为协变量输入动力学函数。
+- `s_mean` 默认启用，可用 `--disable_s_mean` 关闭。
+- 形态学特征按 ROI×Metric 列在训练集上做 Z-score（含可选 ICV/TIV 归一化）。
+- 拓扑特征（ECC 向量）仅作条件输入，不参与训练 loss。
+- 采用多起点配对采样：相邻访视 70%，任意 i<j 组合 30%。
+
+可选参数示例：
+
+```bash
+python -m scripts.train_clg_ode \
+  --topo_bins 32 \
+  --adjacent_pair_prob 0.7 \
+  --disable_s_mean
+```
+
+集群提交脚本（Slurm + Singularity）：
+
+```bash
+sbatch scripts/submit_clg_ode.sh
 ```
 
 训练脚本会在 `--results_dir` 下保存：

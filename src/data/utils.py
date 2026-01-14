@@ -58,6 +58,27 @@ def load_matrix(path: str, max_nodes: int = 400) -> np.ndarray:
     return arr
 
 
+def preprocess_sc(matrix: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    a = matrix.astype(np.float32, copy=True)
+    a = 0.5 * (a + a.T)
+    np.fill_diagonal(a, 0.0)
+    a_log = np.log1p(a)
+    return a, a_log
+
+
+def compute_strengths(a: np.ndarray, eps: float = 1e-8) -> Tuple[float, float]:
+    triu_idx = np.triu_indices(a.shape[0], k=1)
+    vals = a[triu_idx]
+    total = float(np.sum(vals))
+    s = float(np.log(total + eps))
+    pos = vals[vals > 0]
+    if pos.size == 0:
+        s_mean = float(np.log(eps))
+    else:
+        s_mean = float(np.log(float(np.mean(pos)) + eps))
+    return s, s_mean
+
+
 def flatten_upper_triangle(mat: np.ndarray, triu_idx: Tuple[np.ndarray, np.ndarray]) -> np.ndarray:
     return mat[triu_idx].astype(np.float32)
 
@@ -65,4 +86,3 @@ def flatten_upper_triangle(mat: np.ndarray, triu_idx: Tuple[np.ndarray, np.ndarr
 def compute_triu_indices(n_nodes: int) -> Tuple[np.ndarray, np.ndarray]:
     idx = np.triu_indices(n_nodes, k=1)
     return idx[0], idx[1]
-

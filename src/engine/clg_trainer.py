@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import math
 import os
+from dataclasses import dataclass
 from typing import Any, Dict, List, Tuple
 
 import numpy as np
@@ -14,8 +15,16 @@ from torch.utils.data import DataLoader, Subset
 
 from src.data.clg_dataset import CLGDataset, collate_clg_sequences
 from src.data.utils import compute_triu_indices, ensure_dir
-from src.engine.losses import topology_loss
+from src.engine.losses import edge_bce_loss, weight_huber_loss
 from src.models.clg_ode import CLGODE
+
+
+@dataclass
+class NormStats:
+    morph_mean: torch.Tensor
+    morph_std: torch.Tensor
+    topo_mean: torch.Tensor
+    topo_std: torch.Tensor
 
 
 class CLGTrainer:
@@ -32,10 +41,11 @@ class CLGTrainer:
         patience: int = 10,
         learning_rate: float = 1e-4,
         random_state: int = 42,
-        lambda_kl: float = 1e-3,
-        lambda_topo: float = 0.0,
-        lambda_smooth: float = 1e-2,
-        topk: int = 20,
+        lambda_kl: float = 0.0,
+        lambda_weight: float = 1.0,
+        use_s_mean: bool = True,
+        topo_bins: int = 32,
+        adjacent_pair_prob: float = 0.7,
         solver_steps: int = 8,
     ) -> None:
         self.sc_dir = sc_dir
@@ -51,18 +61,21 @@ class CLGTrainer:
         self.learning_rate = learning_rate
         self.random_state = random_state
         self.lambda_kl = lambda_kl
-        self.lambda_topo = lambda_topo
-        self.lambda_smooth = lambda_smooth
-        self.topk = topk
+        self.lambda_weight = lambda_weight
+        self.use_s_mean = use_s_mean
+        self.topo_bins = topo_bins
+        self.adjacent_pair_prob = adjacent_pair_prob
         self.solver_steps = solver_steps
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.summary: Dict[str, Any] = {}
+        self._rng = np.random.default_rng(self.random_state)
 
     def _build_dataset(self) -> CLGDataset:
         return CLGDataset(
             sc_dir=self.sc_dir,
             morph_root=self.morph_root,
             subject_info_csv=self.subject_info_csv,
+            topo_bins=self.topo_bins,
         )
 
     def _split_outer(self, subjects: List[str]) -> Tuple[List[int], List[int]]:
@@ -85,6 +98,12 @@ class CLGTrainer:
             collate_fn=collate_clg_sequences,
         )
 
+    def _numeric_cov_dim(self) -> int:
+        base = 1 + 1 + self.topo_bins
+        if self.use_s_mean:
+            base += 1
+        return base
+
     def _build_model(self, dataset: CLGDataset) -> CLGODE:
         num_nodes = dataset.max_nodes
         morph_dim = len(dataset.metric_order)
@@ -96,9 +115,183 @@ class CLGTrainer:
             sex_dim=dataset.sex_vocab_size,
             site_dim=dataset.site_vocab_size,
             cov_embed_dim=8,
-            topk=self.topk,
+            numeric_cov_dim=self._numeric_cov_dim(),
             solver_steps=self.solver_steps,
         )
+
+    def _compute_norm_stats(self, dataset: CLGDataset, indices: List[int]) -> NormStats:
+        n_nodes = dataset.max_nodes
+        morph_dim = len(dataset.metric_order)
+        topo_dim = dataset.topo_bins
+        morph_sum = np.zeros((n_nodes, morph_dim), dtype=np.float64)
+        morph_sumsq = np.zeros((n_nodes, morph_dim), dtype=np.float64)
+        topo_sum = np.zeros((topo_dim,), dtype=np.float64)
+        topo_sumsq = np.zeros((topo_dim,), dtype=np.float64)
+        morph_count = 0
+        topo_count = 0
+        for idx in indices:
+            item = dataset[idx]
+            x = item["x"].numpy()
+            icv = item["icv"].numpy()
+            x = self._apply_volume_norm_np(x, icv, dataset.volume_metric_indices)
+            morph_sum += x.sum(axis=0)
+            morph_sumsq += (x ** 2).sum(axis=0)
+            morph_count += x.shape[0]
+            topo = item["topo"].numpy()
+            topo_sum += topo.sum(axis=0)
+            topo_sumsq += (topo ** 2).sum(axis=0)
+            topo_count += topo.shape[0]
+        morph_mean = morph_sum / max(morph_count, 1)
+        morph_var = morph_sumsq / max(morph_count, 1) - morph_mean ** 2
+        morph_std = np.sqrt(np.maximum(morph_var, 1e-6))
+        topo_mean = topo_sum / max(topo_count, 1)
+        topo_var = topo_sumsq / max(topo_count, 1) - topo_mean ** 2
+        topo_std = np.sqrt(np.maximum(topo_var, 1e-6))
+        return NormStats(
+            morph_mean=torch.from_numpy(morph_mean.astype(np.float32)).to(self.device),
+            morph_std=torch.from_numpy(morph_std.astype(np.float32)).to(self.device),
+            topo_mean=torch.from_numpy(topo_mean.astype(np.float32)).to(self.device),
+            topo_std=torch.from_numpy(topo_std.astype(np.float32)).to(self.device),
+        )
+
+    @staticmethod
+    def _apply_volume_norm_np(
+        x: np.ndarray,
+        icv: np.ndarray,
+        volume_indices: List[int],
+    ) -> np.ndarray:
+        if not volume_indices:
+            return x
+        x_adj = x.copy()
+        for t in range(x.shape[0]):
+            scale = icv[t]
+            if not np.isfinite(scale) or scale <= 0:
+                continue
+            x_adj[t, :, volume_indices] = x_adj[t, :, volume_indices] / scale
+        return x_adj
+
+    @staticmethod
+    def _apply_volume_norm_torch(
+        x: torch.Tensor,
+        icv: torch.Tensor,
+        volume_indices: List[int],
+    ) -> torch.Tensor:
+        if not volume_indices:
+            return x
+        x = x.clone()
+        if icv.dim() == 0:
+            if not torch.isfinite(icv) or icv <= 0:
+                return x
+            x[:, :, volume_indices] = x[:, :, volume_indices] / icv
+            return x
+        scale = icv.view(-1, 1, 1)
+        valid = torch.isfinite(scale) & (scale > 0)
+        if not torch.any(valid):
+            return x
+        safe_scale = torch.where(valid, scale, torch.ones_like(scale))
+        x[:, :, volume_indices] = x[:, :, volume_indices] / safe_scale
+        return x
+
+    @staticmethod
+    def _zscore(x: torch.Tensor, mean: torch.Tensor, std: torch.Tensor) -> torch.Tensor:
+        return (x - mean) / std
+
+    def _sample_pair(self, length: int) -> Tuple[int, int]:
+        if length <= 2:
+            return 0, max(1, length - 1)
+        if self._rng.random() < self.adjacent_pair_prob:
+            i = int(self._rng.integers(0, length - 1))
+            return i, i + 1
+        i = int(self._rng.integers(0, length - 1))
+        j = int(self._rng.integers(i + 1, length))
+        return i, j
+
+    def _prepare_pair_batch(
+        self,
+        batch: Dict[str, torch.Tensor],
+        stats: NormStats,
+        volume_indices: List[int],
+    ) -> Dict[str, torch.Tensor]:
+        lengths = batch["lengths"].tolist()
+        a_log = batch["a_log"]
+        a_raw = batch["a_raw"]
+        x = batch["x"]
+        ages = batch["ages"]
+        topo = batch["topo"]
+        strength = batch["strength"]
+        icv = batch["icv"]
+        sex = batch["sex"]
+        site = batch["site"]
+
+        a0_list = []
+        x0_list = []
+        a_t_list = []
+        x_t_list = []
+        delta_list = []
+        age0_list = []
+        topo_list = []
+        strength_list = []
+        icv_start_list = []
+        icv_end_list = []
+        sex_list = []
+        site_list = []
+
+        for i, length in enumerate(lengths):
+            start, end = self._sample_pair(length)
+            a0_list.append(a_log[i, start])
+            x0_list.append(x[i, start])
+            a_t_list.append(a_raw[i, end])
+            x_t_list.append(x[i, end])
+            age0_val = float(ages[i, start].item())
+            age_t_val = float(ages[i, end].item())
+            delta = age_t_val - age0_val
+            if not np.isfinite(delta) or delta <= 0:
+                delta = float(end - start)
+            delta_list.append(delta)
+            age0_list.append(age0_val)
+            topo_list.append(topo[i, start])
+            strength_list.append(strength[i, start])
+            icv_start_list.append(icv[i, start])
+            icv_end_list.append(icv[i, end])
+            sex_list.append(sex[i])
+            site_list.append(site[i])
+
+        a0 = torch.stack(a0_list).to(self.device)
+        x0 = torch.stack(x0_list).to(self.device)
+        a_t = torch.stack(a_t_list).to(self.device)
+        x_t = torch.stack(x_t_list).to(self.device)
+        topo0 = torch.stack(topo_list).to(self.device)
+        strength0 = torch.stack(strength_list).to(self.device)
+        sex0 = torch.stack(sex_list).to(self.device)
+        site0 = torch.stack(site_list).to(self.device)
+        icv_start = torch.stack(icv_start_list).to(self.device)
+        icv_end = torch.stack(icv_end_list).to(self.device)
+        delta_t = torch.tensor(delta_list, dtype=torch.float32, device=self.device)
+        age0 = torch.tensor(age0_list, dtype=torch.float32, device=self.device)
+
+        x0 = self._apply_volume_norm_torch(x0, icv_start, volume_indices)
+        x_t = self._apply_volume_norm_torch(x_t, icv_end, volume_indices)
+        x0 = self._zscore(x0, stats.morph_mean, stats.morph_std)
+        x_t = self._zscore(x_t, stats.morph_mean, stats.morph_std)
+        topo0 = self._zscore(topo0, stats.topo_mean, stats.topo_std)
+
+        times = torch.stack([torch.zeros_like(delta_t), delta_t], dim=1)
+
+        if self.use_s_mean:
+            cov = torch.cat([age0.unsqueeze(-1), strength0, topo0], dim=-1)
+        else:
+            cov = torch.cat([age0.unsqueeze(-1), strength0[:, :1], topo0], dim=-1)
+
+        return {
+            "a0": a0,
+            "x0": x0,
+            "a_t": a_t,
+            "x_t": x_t,
+            "times": times,
+            "sex": sex0,
+            "site": site0,
+            "cov": cov,
+        }
 
     def _train_one_epoch(
         self,
@@ -106,6 +299,8 @@ class CLGTrainer:
         loader: DataLoader,
         optimizer: torch.optim.Optimizer,
         triu_idx: Tuple[np.ndarray, np.ndarray],
+        stats: NormStats,
+        volume_indices: List[int],
     ) -> float:
         model.train()
         total_loss = 0.0
@@ -113,7 +308,7 @@ class CLGTrainer:
         for batch in loader:
             if not batch:
                 continue
-            loss = self._compute_loss(model, batch, triu_idx)
+            loss = self._compute_loss(model, batch, triu_idx, stats, volume_indices)
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
@@ -128,6 +323,8 @@ class CLGTrainer:
         model: nn.Module,
         loader: DataLoader,
         triu_idx: Tuple[np.ndarray, np.ndarray],
+        stats: NormStats,
+        volume_indices: List[int],
     ) -> float:
         model.eval()
         total_loss = 0.0
@@ -136,7 +333,7 @@ class CLGTrainer:
             for batch in loader:
                 if not batch:
                     continue
-                loss = self._compute_loss(model, batch, triu_idx)
+                loss = self._compute_loss(model, batch, triu_idx, stats, volume_indices)
                 total_loss += float(loss.item())
                 count += 1
         if count == 0:
@@ -148,55 +345,59 @@ class CLGTrainer:
         model: CLGODE,
         batch: Dict[str, torch.Tensor],
         triu_idx: Tuple[np.ndarray, np.ndarray],
+        stats: NormStats,
+        volume_indices: List[int],
     ) -> torch.Tensor:
-        a = batch["a"].to(self.device)
-        x = batch["x"].to(self.device)
-        times = batch["times"].to(self.device)
-        mask = batch["mask"].to(self.device)
-        sex = batch["sex"].to(self.device)
-        site = batch["site"].to(self.device)
-        a0 = a[:, 0]
-        x0 = x[:, 0]
-        outputs = model(a0, x0, times, sex, site)
-        a_hat = outputs.a_hat
-        x_hat = outputs.x_hat
+        prepared = self._prepare_pair_batch(batch, stats, volume_indices)
+        outputs = model(
+            prepared["a0"],
+            prepared["x0"],
+            prepared["times"],
+            prepared["sex"],
+            prepared["site"],
+            prepared["cov"],
+        )
+        a_logit = outputs.a_logit[:, -1]
+        a_weight = outputs.a_weight[:, -1]
+        x_hat = outputs.x_hat[:, -1]
+        a_true = prepared["a_t"]
+        x_true = prepared["x_t"]
 
-        a_true = a[:, :, triu_idx[0], triu_idx[1]]
-        a_pred = a_hat[:, :, triu_idx[0], triu_idx[1]]
-        loss_a = masked_mse(a_pred, a_true, mask)
-        loss_x = masked_mse(x_hat, x, mask)
-        loss_recon = loss_a + loss_x
+        loss_morph = torch.mean((x_hat - x_true) ** 2)
+
+        logit_vec = a_logit[:, triu_idx[0], triu_idx[1]]
+        target_vec = (a_true[:, triu_idx[0], triu_idx[1]] > 0).float()
+        loss_edge = edge_bce_loss(logit_vec, target_vec, pos_weight=5.0)
+
+        pred_log = torch.log1p(a_weight[:, triu_idx[0], triu_idx[1]])
+        true_log = torch.log1p(a_true[:, triu_idx[0], triu_idx[1]])
+        loss_weight = weight_huber_loss(pred_log, true_log, target_vec)
 
         kl_morph = kl_divergence(outputs.mu_morph, outputs.logvar_morph)
         kl_conn = kl_divergence(outputs.mu_conn, outputs.logvar_conn)
         loss_kl = 0.5 * (kl_morph + kl_conn)
 
-        loss_topo = topology_loss(a_hat, a, mask)
-        loss_smooth = smoothness_loss(outputs.z_morph, outputs.z_conn, mask)
-
-        return (
-            loss_recon
-            + self.lambda_kl * loss_kl
-            + self.lambda_topo * loss_topo
-            + self.lambda_smooth * loss_smooth
-        )
+        return loss_morph + loss_edge + self.lambda_weight * loss_weight + self.lambda_kl * loss_kl
 
     def _train_cv(
         self,
         dataset: CLGDataset,
         trainval_indices: List[int],
         subjects: List[str],
-    ) -> str:
+    ) -> Tuple[str, NormStats]:
         groups = np.array([subjects[i] for i in trainval_indices])
         indices = np.array(trainval_indices)
         gkf = GroupKFold(n_splits=5)
         triu_idx = compute_triu_indices(dataset.max_nodes)
         best_val = math.inf
         best_model_path = ""
+        best_stats: NormStats | None = None
         fold_results = []
+        volume_indices = dataset.volume_metric_indices
         for fold_idx, (train_idx_rel, val_idx_rel) in enumerate(gkf.split(indices, groups=groups)):
             train_idx = indices[train_idx_rel].tolist()
             val_idx = indices[val_idx_rel].tolist()
+            stats = self._compute_norm_stats(dataset, train_idx)
             train_loader = self._get_loader(dataset, train_idx, shuffle=True)
             val_loader = self._get_loader(dataset, val_idx, shuffle=False)
             model = self._build_model(dataset).to(self.device)
@@ -208,8 +409,21 @@ class CLGTrainer:
                 f"Starting fold {fold_idx + 1}/5 with {len(train_idx)} train subjects and {len(val_idx)} val subjects"
             )
             for epoch in range(self.max_epochs):
-                train_loss = self._train_one_epoch(model, train_loader, optimizer, triu_idx)
-                val_loss = self._evaluate(model, val_loader, triu_idx)
+                train_loss = self._train_one_epoch(
+                    model,
+                    train_loader,
+                    optimizer,
+                    triu_idx,
+                    stats,
+                    volume_indices,
+                )
+                val_loss = self._evaluate(
+                    model,
+                    val_loader,
+                    triu_idx,
+                    stats,
+                    volume_indices,
+                )
                 print(
                     f"Fold {fold_idx + 1}/5, epoch {epoch + 1}/{self.max_epochs}, "
                     f"train_loss={train_loss:.4f}, val_loss={val_loss:.4f}"
@@ -236,10 +450,13 @@ class CLGTrainer:
             if best_fold_val < best_val:
                 best_val = best_fold_val
                 best_model_path = fold_model_path
+                best_stats = stats
         self.summary["cv_folds"] = fold_results
         self.summary["best_val_loss"] = float(best_val)
         self.summary["best_model_path"] = best_model_path
-        return best_model_path
+        if best_stats is None:
+            raise RuntimeError("No training folds produced a model.")
+        return best_model_path, best_stats
 
     def run(self) -> None:
         dataset = self._build_dataset()
@@ -247,14 +464,20 @@ class CLGTrainer:
             return
         subjects = [sid for sid, _ in dataset.sequences]
         trainval_indices, test_indices = self._split_outer(subjects)
-        best_model_path = self._train_cv(dataset, trainval_indices, subjects)
+        best_model_path, best_stats = self._train_cv(dataset, trainval_indices, subjects)
         test_loader = self._get_loader(dataset, test_indices, shuffle=False)
         model = self._build_model(dataset).to(self.device)
         if best_model_path and os.path.exists(best_model_path):
             state = torch.load(best_model_path, map_location=self.device)
             model.load_state_dict(state)
         triu_idx = compute_triu_indices(dataset.max_nodes)
-        test_loss = self._evaluate(model, test_loader, triu_idx)
+        test_loss = self._evaluate(
+            model,
+            test_loader,
+            triu_idx,
+            best_stats,
+            dataset.volume_metric_indices,
+        )
         self.summary["test_loss"] = float(test_loss)
         self.summary["n_subjects"] = len(dataset)
         self.summary["n_trainval"] = len(trainval_indices)
@@ -268,31 +491,5 @@ class CLGTrainer:
             json.dump(self.summary, f, indent=2)
 
 
-def masked_mse(pred: torch.Tensor, target: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
-    diff = (pred - target) ** 2
-    while mask.dim() < diff.dim():
-        mask = mask.unsqueeze(-1)
-    diff = diff * mask
-    denom = mask.sum() * diff.shape[-1]
-    if denom.item() == 0:
-        return torch.tensor(0.0, device=diff.device)
-    return diff.sum() / denom
-
-
 def kl_divergence(mu: torch.Tensor, logvar: torch.Tensor) -> torch.Tensor:
     return 0.5 * torch.mean(torch.exp(logvar) + mu ** 2 - 1.0 - logvar)
-
-
-def smoothness_loss(
-    z_morph: torch.Tensor,
-    z_conn: torch.Tensor,
-    mask: torch.Tensor,
-) -> torch.Tensor:
-    if z_morph.shape[1] < 3:
-        return torch.tensor(0.0, device=z_morph.device)
-    dz2_m = z_morph[:, 2:] - 2 * z_morph[:, 1:-1] + z_morph[:, :-2]
-    dz2_c = z_conn[:, 2:] - 2 * z_conn[:, 1:-1] + z_conn[:, :-2]
-    valid = mask[:, 2:] * mask[:, 1:-1] * mask[:, :-2]
-    loss_m = masked_mse(dz2_m, torch.zeros_like(dz2_m), valid)
-    loss_c = masked_mse(dz2_c, torch.zeros_like(dz2_c), valid)
-    return 0.5 * (loss_m + loss_c)

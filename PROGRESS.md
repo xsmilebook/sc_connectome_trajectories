@@ -2,7 +2,7 @@
 
 
 ## Current focus
-- 2026-01-14: Draft the CLG-ODE implementation and submission plan aligned with the locked specification.
+- 2026-01-14: Implement CLG-ODE specification (delta time, topology conditioning, losses, submission workflow).
 
 ## Completed
 - 2026-01-12: Drafted the repo-structure refactor plan in `PLAN.md`.
@@ -21,6 +21,7 @@
 - 2026-01-14: Locked ECC triangle counting and edge-score calibration for CLG-ODE.
 - 2026-01-14: Linked cluster GPU usage guide across docs and agent rules.
 - 2026-01-14: Replaced `PLAN.md` with the CLG-ODE implementation and execution plan.
+- 2026-01-14: Implemented CLG-ODE spec updates (SC preprocessing, topology conditioning, delta-time sampling), added submission script, and refreshed docs/tests.
 
 ## In progress
 

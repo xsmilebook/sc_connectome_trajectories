@@ -1,16 +1,18 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, Tuple
+from typing import Tuple
 
 import torch
 from torch import nn
+from torch.nn import functional as F
 
 
 @dataclass
 class CLGOutput:
     x_hat: torch.Tensor
-    a_hat: torch.Tensor
+    a_logit: torch.Tensor
+    a_weight: torch.Tensor
     z_morph: torch.Tensor
     z_conn: torch.Tensor
     mu_morph: torch.Tensor
@@ -37,15 +39,18 @@ class GraphEncoder(nn.Module):
 
 
 class CovariateEncoder(nn.Module):
-    def __init__(self, sex_dim: int, site_dim: int, embed_dim: int) -> None:
+    def __init__(self, sex_dim: int, site_dim: int, embed_dim: int, numeric_dim: int) -> None:
         super().__init__()
         self.sex_embed = nn.Embedding(sex_dim, embed_dim)
         self.site_embed = nn.Embedding(site_dim, embed_dim)
+        self.numeric_dim = numeric_dim
 
-    def forward(self, sex: torch.Tensor, site: torch.Tensor) -> torch.Tensor:
+    def forward(self, sex: torch.Tensor, site: torch.Tensor, numeric: torch.Tensor) -> torch.Tensor:
         sex_emb = self.sex_embed(sex)
         site_emb = self.site_embed(site)
-        return torch.cat([sex_emb, site_emb], dim=-1)
+        if self.numeric_dim == 0:
+            return torch.cat([sex_emb, site_emb], dim=-1)
+        return torch.cat([sex_emb, site_emb, numeric], dim=-1)
 
 
 class CoupledODEFunc(nn.Module):
@@ -88,16 +93,19 @@ class MorphDecoder(nn.Module):
 
 
 class ConnDecoder(nn.Module):
-    def __init__(self, topk: Optional[int] = None) -> None:
+    def __init__(self) -> None:
         super().__init__()
-        self.topk = topk
+        self.alpha = nn.Parameter(torch.tensor(10.0))
+        self.delta = nn.Parameter(torch.tensor(0.0))
+        self.gamma = nn.Parameter(torch.tensor(1.0))
+        self.beta = nn.Parameter(torch.tensor(0.0))
 
-    def forward(self, z: torch.Tensor) -> torch.Tensor:
-        a = torch.sigmoid(torch.matmul(z, z.transpose(-1, -2)))
-        a = a - torch.diag_embed(torch.diagonal(a, dim1=-2, dim2=-1))
-        if self.topk is not None and self.topk > 0:
-            a = sparsify_topk(a, self.topk)
-        return a
+    def forward(self, z: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        score = torch.matmul(z, z.transpose(-1, -2))
+        logit = self.alpha * (score - self.delta)
+        weight = F.softplus(self.gamma * score + self.beta)
+        weight = weight - torch.diag_embed(torch.diagonal(weight, dim1=-2, dim2=-1))
+        return logit, weight
 
 
 class CLGODE(nn.Module):
@@ -110,7 +118,7 @@ class CLGODE(nn.Module):
         sex_dim: int = 3,
         site_dim: int = 128,
         cov_embed_dim: int = 8,
-        topk: Optional[int] = 20,
+        numeric_cov_dim: int = 0,
         solver_steps: int = 8,
     ) -> None:
         super().__init__()
@@ -119,14 +127,19 @@ class CLGODE(nn.Module):
         self.solver_steps = solver_steps
         self.morph_encoder = GraphEncoder(morph_dim, hidden_dim, latent_dim)
         self.conn_encoder = GraphEncoder(morph_dim, hidden_dim, latent_dim)
-        self.cov_encoder = CovariateEncoder(sex_dim, site_dim, cov_embed_dim)
+        self.cov_encoder = CovariateEncoder(
+            sex_dim=sex_dim,
+            site_dim=site_dim,
+            embed_dim=cov_embed_dim,
+            numeric_dim=numeric_cov_dim,
+        )
         self.ode_func = CoupledODEFunc(
             latent_dim=latent_dim,
-            cov_dim=cov_embed_dim * 2,
+            cov_dim=cov_embed_dim * 2 + numeric_cov_dim,
             hidden_dim=hidden_dim,
         )
         self.morph_decoder = MorphDecoder(latent_dim, morph_dim, hidden_dim)
-        self.conn_decoder = ConnDecoder(topk=topk)
+        self.conn_decoder = ConnDecoder()
 
     def forward(
         self,
@@ -135,20 +148,22 @@ class CLGODE(nn.Module):
         times: torch.Tensor,
         sex: torch.Tensor,
         site: torch.Tensor,
+        covariates: torch.Tensor,
     ) -> CLGOutput:
         mu_morph, logvar_morph = self.morph_encoder(x0, a0)
         mu_conn, logvar_conn = self.conn_encoder(x0, a0)
         z_morph0 = reparameterize(mu_morph, logvar_morph, self.training)
         z_conn0 = reparameterize(mu_conn, logvar_conn, self.training)
         z0 = torch.cat([z_morph0, z_conn0], dim=-1)
-        cov = self.cov_encoder(sex, site)
+        cov = self.cov_encoder(sex, site, covariates)
         zt = integrate_latent(self.ode_func, z0, times, cov, self.solver_steps)
         z_morph_t, z_conn_t = torch.chunk(zt, 2, dim=-1)
         x_hat = self.morph_decoder(z_morph_t)
-        a_hat = self.conn_decoder(z_conn_t)
+        a_logit, a_weight = self.conn_decoder(z_conn_t)
         return CLGOutput(
             x_hat=x_hat,
-            a_hat=a_hat,
+            a_logit=a_logit,
+            a_weight=a_weight,
             z_morph=z_morph_t,
             z_conn=z_conn_t,
             mu_morph=mu_morph,
@@ -224,13 +239,3 @@ def rk4_integrate(
         z = z + (h / 6.0) * (k1 + 2 * k2 + 2 * k3 + k4)
         t = t + h
     return z
-
-
-def sparsify_topk(a: torch.Tensor, topk: int) -> torch.Tensor:
-    b, n, _ = a.shape
-    vals, idx = torch.topk(a, k=min(topk, n), dim=-1)
-    mask = torch.zeros_like(a)
-    mask.scatter_(-1, idx, 1.0)
-    a_sparse = a * mask
-    a_sym = torch.maximum(a_sparse, a_sparse.transpose(-1, -2))
-    return a_sym

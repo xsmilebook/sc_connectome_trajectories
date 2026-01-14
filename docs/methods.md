@@ -25,18 +25,19 @@
 
 - 以图编码器分别得到形态学与连接的潜变量分布（`mu/logvar`），通过重参数化采样初始潜变量。
 - 使用相对时间 `Δt = age - age0` 作为 ODE 的积分变量（每次预测从 `t0=0` 开始），并将起点绝对年龄 `age0` 作为协变量输入动力学函数以避免重复建模。
+- SC 预处理：对称化并清零对角线，输入与权重回归在 `log(1 + A)` 域进行，不做额外 hard sparsify。
 - 将协变量（`age0/sex/siteid` + SC 全局强度标量 `s`（原始权重域计算）+ 可选正边平均强度 `s_mean` + 拓扑摘要向量 `μ(A)`）编码后，与时间 `t` 一同作为 ODE 右端项的输入，得到耦合潜空间动力学。
 - 解码得到形态学预测 `x_hat` 与连接预测 `a_hat`；连接使用连续权重回归（`Softplus(z z^T)`），不做额外 hard sparsify（禁用 Top‑K/阈值截断）。
+- 训练采样采用多起点预测：70% 选择相邻访视对，30% 从所有 `i<j` 组合中均匀采样。
 
 损失项（见 `src/engine/clg_trainer.py`）：
 
 - 重建误差：
-  - 形态学：按 (ROI, metric) 列做训练集统计量的 Z-score 后，对 `x_hat` 与真实 `x` 计算 masked MSE/Huber。
+  - 形态学：按 (ROI, metric) 列做训练集统计量的 Z-score 后，对 `x_hat` 与真实 `x` 计算 MSE。
   - 连接：为避免零边主导，使用两项式损失：存在性加权 BCE（pos:neg=5:1）+ 正边权重的 log 域 Huber；`L = L_edge + λ_w * L_weight`（默认 `λ_w=1.0`；上三角计算避免冗余）。
   - 连接输出共享同一个内积分数 `s_ij=z_i^T z_j`，存在性与强度分别通过可学习标定得到：`p_ij=σ(α(s_ij-δ))`，`ŵ_ij=softplus(γ s_ij+β)`（默认初始化 `α=10, δ=0, γ=1, β=0`）。
 - KL 正则：对潜变量分布的 KL divergence（权重 `lambda_kl`）。
-- 平滑正则：对潜变量二阶差分的平滑惩罚（权重 `lambda_smooth`）。
-- 拓扑：本版本不作为训练损失（占位接口 `src/engine/losses.py` 保留；默认 `lambda_topo=0`），仅将拓扑摘要 `μ(A)` 作为条件输入与评估解释项（阈值分位数的 Euler characteristic curve，见 `docs/reports/implementation_specification.md`）。
+- 拓扑：仅作为条件输入与评估解释项，不参与训练 loss（阈值分位数的 Euler characteristic curve，见 `docs/reports/implementation_specification.md`）。
 
 ## 训练与评估口径
 

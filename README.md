@@ -78,8 +78,15 @@ python -m scripts.train_clg_ode \
 
 Notes:
 - CLG-ODE expects morphology CSVs named `Schaefer400_Morphology_<subid>.csv` under `--morph_root`.
-- The trainer uses the `age`, `sex`, and `siteid` columns in `subject_info_sc.csv`.
-- Topology loss is a stub by default; plug in a PH loss implementation in `src/engine/losses.py` if needed.
+- The trainer uses the `age`, `sex`, and `siteid` columns in `subject_info_sc.csv`, with delta-time integration and `age0` as a covariate.
+- Topology features (ECC) and strength covariates (`s`, `s_mean`) are used for conditioning; topology is not part of the training loss.
+- `s_mean` is enabled by default; disable via `--disable_s_mean` if needed.
 
 Cluster GPU usage:
 - See `docs/cluster_gpu_usage.md` for the Slurm + Singularity GPU workflow and cluster-specific constraints.
+
+CLG-ODE submission helper (uses paths from `configs/paths.yaml` and a Singularity image under `data/external/containers/`):
+
+```bash
+sbatch scripts/submit_clg_ode.sh
+```
