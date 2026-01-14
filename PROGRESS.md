@@ -14,6 +14,8 @@
 - 2026-01-12: Added root-level `scripts/` entrypoints and made `src/` importable as a package.
 - 2026-01-12: Added `configs/paths.yaml` and switched defaults to config-managed paths; removed tracked runtime sublists from `src/`.
 - 2026-01-13: Improved FreeSurfer rerun behavior (force rerun and incomplete-done detection).
+- 2026-01-14: Updated the FreeSurfer rerun sublist to only include subjects without completion markers in logs.
+- 2026-01-14: Required git commits for any code or documentation edits in `AGENTS.md`.
 
 ## In progress
 

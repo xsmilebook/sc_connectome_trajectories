@@ -10,7 +10,8 @@ This repository treats `ARCHITECTURE.md` as the source of truth for the stable l
 3) If a change affects usage or structure, update `README.md` and/or `docs/workflow.md`.
 4) Update `PROGRESS.md` after completing a change set.
 5) Log each session in `docs/sessions/` (date-stamped file).
-6) If the `create-plan` skill is used, write the plan to the root `PLAN.md`.
+6) If you modify code or documentation, commit the changes with git (write your own message).
+7) If the `create-plan` skill is used, write the plan to the root `PLAN.md`.
 
 ## Scope and constraints
 
