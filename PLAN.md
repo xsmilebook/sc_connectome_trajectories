@@ -1,19 +1,22 @@
 # Plan
 
-We will migrate the Git repository boundary from `src/` to the project root so the repository matches `ARCHITECTURE.md`, while keeping runtime artifacts untracked via `.gitignore`.
+Draft a CLG-ODE implementation and execution plan that matches the locked specification, then define the exact steps for submitting a GPU job on the cluster. The plan focuses on model/data deltas, topology conditioning, and a Slurm+Singularity runbook.
 
 ## Scope
-- In: Make the project root the Git repo; keep the stable layout in `ARCHITECTURE.md`; ensure `.gitignore` prevents committing runtime artifacts.
-- Out: Refactor scientific code/pipelines beyond what is needed for the repo migration; change dataset semantics; modify runtime artifacts under `data/` or `outputs/`.
+- In: CLG-ODE model/data/training updates, topology conditioning features, SC/morph preprocessing rules, Slurm submission script, and runbook docs.
+- Out: New datasets, container build steps, changes under `data/` or `outputs/`, and unrelated refactors.
 
 ## Action items
-[x] Tag the pre-migration `src/` repo and create a full backup bundle (`src-pre-root-migration-20260112.bundle`).
-[x] Initialize a new Git repo at the project root and commit existing root documentation (excluding runtime artifacts).
-[x] Convert `src/` into a normal directory by removing `src/.git`, then commit the current `src/` snapshot into the root repo.
-[x] Set the root repo default branch to `main` and restore `origin` remote.
-[x] Preserve full `src/` history inside the root repo (imported via `git-filter-repo` rewrite + merge).
-[ ] Run validation: `python -m pytest` (if applicable) and a smoke import/execution of key entrypoints from the new root.
-[x] Record the migration in `PROGRESS.md` and `docs/sessions/` and document rollback using the bundle.
+[ ] Compare current CLG-ODE code with `docs/reports/implementation_specification.md` and enumerate required deltas (time definition, covariates, losses, topology usage).
+[ ] Implement SC preprocessing in the data layer: symmetrize, zero diagonal, log1p transform; compute global strength covariates `s` (and optional `s_mean`) from raw weights.
+[ ] Add train-only morphology Z-score normalization at ROI-metric granularity, with optional ICV/TIV adjustment when available.
+[ ] Build topology conditioning features per spec (ECC vector from log1p weights, quantile thresholds, triangle counts) and inject into the ODE dynamics; keep topology out of the training loss.
+[ ] Switch to delta-time integration (age - age0), inject age0/sex/site/strength/topology covariates, and implement multi-start forecasting pair sampling (70% adjacent, 30% random).
+[ ] Replace decoder/loss with edge-existence BCE and positive-edge Huber on log1p weights; disable hard sparsification/topk pruning.
+[ ] Add a Slurm submission script that runs `python -m scripts.train_clg_ode` on `q_ai4` with `--gres=gpu:1`, and reference the Singularity image under `data/external/containers/` via `configs/paths.yaml`.
+[ ] Add validation steps (`python -m pytest`, CUDA availability check in-container) and document expected outputs in `outputs/logs/` and `outputs/results/`.
+[ ] Update `README.md`, `docs/workflow.md`, `PROGRESS.md`, and `docs/sessions/` to reflect the CLG-ODE execution workflow and constraints.
 
 ## Open questions
-- None (history is preserved in the bundle; no additional ignore rules requested).
+- Confirm the exact Singularity image filename to store under `data/external/containers/`.
+- None (s_mean defaults to enabled unless explicitly disabled).

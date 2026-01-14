@@ -2,7 +2,7 @@
 
 
 ## Current focus
-- 2026-01-12: Make the project root the Git repository root (migrate from `src/`).
+- 2026-01-14: Draft the CLG-ODE implementation and submission plan aligned with the locked specification.
 
 ## Completed
 - 2026-01-12: Drafted the repo-structure refactor plan in `PLAN.md`.
@@ -20,6 +20,7 @@
 - 2026-01-14: Locked CLG-ODE implementation details (topology conditioning, SC loss decomposition, covariates, and pair sampling).
 - 2026-01-14: Locked ECC triangle counting and edge-score calibration for CLG-ODE.
 - 2026-01-14: Linked cluster GPU usage guide across docs and agent rules.
+- 2026-01-14: Replaced `PLAN.md` with the CLG-ODE implementation and execution plan.
 
 ## In progress
 
