@@ -61,8 +61,8 @@
 *   **归一化策略**：**不对 SC 做被试级（Subject-level）的强制总强度归一化**（如除以总和）。
 *   **强度协变量提取（锁定）**：基于**原始权重域**（对称化 + 去对角后的 $A$，不取 log）显式计算全局强度标量 $s$：
     $$ s = \log\left(\sum_{i<j} A_{ij} + \epsilon\right) $$
-*   **可选强度补充（可开关）**：可额外提供稀疏度/密度摘要：
-    $$ s_{\text{mean}} = \log\left(\mathrm{mean}\big(\mathbb{1}[A_{ij}>0]\big) + \epsilon\right) $$
+*   **可选强度补充（可开关）**：可额外提供“正边平均强度”摘要（per-edge strength）：
+    $$ s_{\text{mean}} = \log\left(\mathrm{mean}\big(A_{ij}\mid A_{ij}>0\big) + \epsilon\right) $$
 *   **注入方式**：将 $s$ 作为协变量输入动力学函数 $f(\cdot)$ 或 Decoder。
     *   *目的*：保留强度随发育变化的真实信息，同时防止强度差异主导图结构的表征学习。
 
