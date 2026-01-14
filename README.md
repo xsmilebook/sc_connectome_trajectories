@@ -80,3 +80,6 @@ Notes:
 - CLG-ODE expects morphology CSVs named `Schaefer400_Morphology_<subid>.csv` under `--morph_root`.
 - The trainer uses the `age`, `sex`, and `siteid` columns in `subject_info_sc.csv`.
 - Topology loss is a stub by default; plug in a PH loss implementation in `src/engine/losses.py` if needed.
+
+Cluster GPU usage:
+- See `docs/cluster_gpu_usage.md` for the Slurm + Singularity GPU workflow and cluster-specific constraints.

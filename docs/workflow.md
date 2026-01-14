@@ -111,6 +111,14 @@ python -m scripts.train_clg_ode \
 - 最优 fold 的模型权重（`.pt`）
 - 训练/验证摘要（JSON）
 
+## 集群 GPU 运行规范
+
+本仓库在当前集群上运行深度学习/GNN 任务时，统一遵循 `docs/cluster_gpu_usage.md`：
+
+- 仅通过 Slurm 队列申请 GPU（不在登录节点直接训练）。
+- 使用 Singularity 容器 `singularity exec --nv`，避免在计算节点动态安装/编译依赖。
+- Slurm 日志建议写入 `outputs/logs/`，训练结果写入 `outputs/results/`（与本仓库结构一致）。
+
 ## 更新说明
 
 当目录约定或关键输入输出路径变更时，请在 `docs/sessions/` 记录变更内容、原因与影响范围。

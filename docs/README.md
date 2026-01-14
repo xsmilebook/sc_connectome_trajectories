@@ -7,6 +7,7 @@
 - `docs/workflow.md`: 可复现实验与数据流转约定（单数据集；`data/` 下不再按数据集名称分子目录）。
 - `docs/methods.md`: 模型与训练/评估口径（面向方法学一致性）。
 - `docs/data_dictionary.md`: 关键表格与文件格式索引（字段/命名约定）。
+- `docs/cluster_gpu_usage.md`: 当前集群 GPU 使用规范（Slurm + Singularity；避免登录节点运行与在线安装依赖）。
 - `docs/research/research_plan.md`: 研究计划与阶段性设想（可能与实现存在时间差）。
 
 ## sessions 与 notes

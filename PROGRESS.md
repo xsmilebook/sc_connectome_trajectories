@@ -19,6 +19,7 @@
 - 2026-01-14: Refined README and workflow documentation for morphology submission and summary tables.
 - 2026-01-14: Locked CLG-ODE implementation details (topology conditioning, SC loss decomposition, covariates, and pair sampling).
 - 2026-01-14: Locked ECC triangle counting and edge-score calibration for CLG-ODE.
+- 2026-01-14: Linked cluster GPU usage guide across docs and agent rules.
 
 ## In progress
 

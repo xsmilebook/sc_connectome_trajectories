@@ -22,6 +22,7 @@ This repository treats `ARCHITECTURE.md` as the source of truth for the stable l
 
 ## Engineering conventions (when requested)
 
+- For GPU work on the current cluster, follow `docs/cluster_gpu_usage.md` (Slurm + Singularity + no on-node env mutation).
 - Use `python -m scripts.<entry>` for execution.
 - Avoid ad-hoc `sys.path` hacks; if unavoidable, confine them to entry points and document why.
 - All filesystem paths must come from `configs/`.
