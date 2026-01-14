@@ -77,6 +77,15 @@ CLG-ODE 训练需要 `--subject_info_csv`，建议放在 `data/processed/table/s
    - 入口：`python -m scripts.export_morphology_tables ...`
    - 输出建议写入 `data/processed/table/`
 
+### 形态学汇总表（已生成）
+
+当前统计文件已位于 `data/processed/table/`：
+
+- `subject_info_morphology_success.csv`：成功生成形态学指标的被试清单与路径索引。
+- `subject_info_sc_without_morphology.csv`：SC 表中缺失形态学指标的被试清单。
+- `subject_info_sc.csv`：结构连接组与协变量对齐的基础表。
+- `sublist_by_site/`：按 session/site 分组的被试子清单，用于批量提交形态学提取任务。
+
 ## 训练与结果输出
 
 ### VectorLSTM baseline

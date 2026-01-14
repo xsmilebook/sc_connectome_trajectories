@@ -1,49 +1,82 @@
-﻿# sc_connectome_trajectories
+# sc_connectome_trajectories
 
-## data
+## Overview
 
-### sMRI
-subjects without processed freesurfer: /ibmgpfs/cuizaixu_lab/Public_Data/ABCD_20221009/rawdata/sMRI
+This repository contains preprocessing and modeling workflows for ABCD structural connectome
+trajectories. Paths are managed by `configs/paths.yaml`; FreeSurfer roots under `/GPFS/.../ABCD/...`
+are intentionally kept as absolute paths.
 
-### run freesurfer
+## FreeSurfer (recon-all)
+
+```bash
 N=$(find /GPFS/cuizaixu_lab_permanent/xuhaoshu/ABCD/raw_data/smri -type f -name "*_T1w.nii" | wc -l)
 sbatch --array=1-${N} src/preprocess/freesurfer.sh
-
-HPC paths and local defaults are configured in `configs/paths.yaml` (the FreeSurfer `/GPFS/.../ABCD/...` roots are intentionally kept as absolute paths).
+```
 
 Rerun note:
-- If a previous run was interrupted but the subject is incorrectly skipped due to a stale `scripts/recon-all.done`, submit with `FREESURFER_FORCE=1` to force re-run.
+- If a previous run was interrupted but a stale `scripts/recon-all.done` causes an incorrect skip,
+  submit with `FREESURFER_FORCE=1` to force re-run.
 
-## run morph
+## Morphology (Schaefer400)
+
+Set atlas and output directories:
+
+```bash
 export ATLAS_DIR="/ibmgpfs/cuizaixu_lab/xuhaoshu/projects/sc_connectome_trajectories/data/raw/atlas"
-export OUTPUT_DIR="/ibmgpfs/cuizaixu_lab/xuhaoshu/projects/sc_connectome_trajectories/data/processed/morphology/4YearFollowUpYArm1/SIEMENS"
+export OUTPUT_DIR="/ibmgpfs/cuizaixu_lab/xuhaoshu/projects/sc_connectome_trajectories/data/processed/morphology/baselineYear1Arm1/SIEMENS"
+```
 
-sbatch --export=ALL,SUBJECTS_DIR="/GPFS/cuizaixu_lab_permanent/xuxiaoyu/ABCD/processed/freesurfer/baselineYear1Arm1/SIEMENS/site14",ATLAS_DIR="${ATLAS_DIR}",OUTPUT_DIR="${OUTPUT_DIR}",SITE_NAME="site14" --array=1-100 run_schaefer400_morphology.sh /path/to/sublist.txt
+Single site (array job):
 
+```bash
+sbatch --export=ALL,SUBJECTS_DIR="/GPFS/cuizaixu_lab_permanent/xuhaoshu/ABCD/processed/freesurfer/baselineYear1Arm1/SIEMENS/site14",ATLAS_DIR="${ATLAS_DIR}",OUTPUT_DIR="${OUTPUT_DIR}",SITE_NAME="site14" \
+  --array=1-100 \
+  src/preprocess/run_schaefer400_morphology.sh /path/to/sublist.txt
+```
+
+All sites (run from `src/preprocess` so relative paths resolve):
+
+```bash
+cd /ibmgpfs/cuizaixu_lab/xuhaoshu/projects/sc_connectome_trajectories/src/preprocess
 mkdir -p /ibmgpfs/cuizaixu_lab/xuhaoshu/projects/sc_connectome_trajectories/data/processed/table/sublist_by_site/4YearFollowUpYArm1
-bash submit_schaefer400_morphology_all_sites.sh /GPFS/cuizaixu_lab_permanent/xuxiaoyu/ABCD/processed/freesurfer/4YearFollowUpYArm1/SIEMENS /ibmgpfs/cuizaixu_lab/xuhaoshu/projects/sc_connectome_trajectories/data/processed/table/sublist_by_site/4YearFollowUpYArm1 ./run_schaefer400_morphology.sh
-## summarize morph
+
+bash submit_schaefer400_morphology_all_sites.sh \
+  /GPFS/cuizaixu_lab_permanent/xuxiaoyu/ABCD/processed/freesurfer/4YearFollowUpYArm1/SIEMENS \
+  /ibmgpfs/cuizaixu_lab/xuhaoshu/projects/sc_connectome_trajectories/data/processed/table/sublist_by_site/4YearFollowUpYArm1 \
+  ./run_schaefer400_morphology.sh
+```
+
+## Morphology summaries
+
+```bash
 python -m scripts.export_morphology_tables \
   --morph_root /ibmgpfs/cuizaixu_lab/xuhaoshu/projects/sc_connectome_trajectories/data/processed/morphology \
   --subject_info_sc /ibmgpfs/cuizaixu_lab/xuhaoshu/projects/sc_connectome_trajectories/data/processed/table/subject_info_sc.csv \
   --out_success /ibmgpfs/cuizaixu_lab/xuhaoshu/projects/sc_connectome_trajectories/data/processed/table/subject_info_morphology_success.csv \
   --out_missing /ibmgpfs/cuizaixu_lab/xuhaoshu/projects/sc_connectome_trajectories/data/processed/table/subject_info_sc_without_morphology.csv
+```
 
-## train models
+## Model training
 
-### vector LSTM baseline
+Vector LSTM baseline:
+
+```bash
 python -m scripts.train \
   --sc_dir /path/to/sc_connectome/schaefer400 \
   --results_dir /path/to/results
+```
 
-### CLG-ODE
+CLG-ODE:
+
+```bash
 python -m scripts.train_clg_ode \
   --sc_dir /path/to/sc_connectome/schaefer400 \
   --morph_root /path/to/morphology \
   --subject_info_csv /path/to/subject_info_sc.csv \
   --results_dir /path/to/results
+```
 
 Notes:
-- CLG-ODE expects morphology CSVs named like `Schaefer400_Morphology_<subid>.csv` under `--morph_root`.
+- CLG-ODE expects morphology CSVs named `Schaefer400_Morphology_<subid>.csv` under `--morph_root`.
 - The trainer uses the `age`, `sex`, and `siteid` columns in `subject_info_sc.csv`.
 - Topology loss is a stub by default; plug in a PH loss implementation in `src/engine/losses.py` if needed.

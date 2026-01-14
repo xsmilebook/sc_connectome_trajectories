@@ -16,6 +16,7 @@
 - 2026-01-13: Improved FreeSurfer rerun behavior (force rerun and incomplete-done detection).
 - 2026-01-14: Updated the FreeSurfer rerun sublist to only include subjects without completion markers in logs.
 - 2026-01-14: Required git commits for any code or documentation edits in `AGENTS.md`.
+- 2026-01-14: Refined README and workflow documentation for morphology submission and summary tables.
 
 ## In progress
 
