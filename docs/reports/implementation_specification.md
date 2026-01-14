@@ -59,8 +59,10 @@
 
 ### 3.3 强度信息的处理
 *   **归一化策略**：**不对 SC 做被试级（Subject-level）的强制总强度归一化**（如除以总和）。
-*   **强度协变量提取**：显式计算全局强度标量 $s$：
+*   **强度协变量提取（锁定）**：基于**原始权重域**（对称化 + 去对角后的 $A$，不取 log）显式计算全局强度标量 $s$：
     $$ s = \log\left(\sum_{i<j} A_{ij} + \epsilon\right) $$
+*   **可选强度补充（可开关）**：可额外提供稀疏度/密度摘要：
+    $$ s_{\text{mean}} = \log\left(\mathrm{mean}\big(\mathbb{1}[A_{ij}>0]\big) + \epsilon\right) $$
 *   **注入方式**：将 $s$ 作为协变量输入动力学函数 $f(\cdot)$ 或 Decoder。
     *   *目的*：保留强度随发育变化的真实信息，同时防止强度差异主导图结构的表征学习。
 
@@ -110,6 +112,12 @@
 采用连续权重回归策略：
 *   **重建公式**：
     $$ \hat{A} = \text{Softplus}(Z_{\text{conn}} Z_{\text{conn}}^\top) $$
+*   **共享打分与可学习标定（锁定）**：存在性与强度回归共享同一个内积分数 $s_{ij}=z_i^\top z_j$，但通过可学习标定参数映射到不同输出：
+    $$
+    p_{ij}=\sigma\big(\alpha(s_{ij}-\delta)\big),\quad
+    \hat{w}_{ij}=\mathrm{softplus}(\gamma s_{ij}+\beta)
+    $$
+    默认初始化：$\alpha=10,\ \delta=0,\ \gamma=1,\ \beta=0$。
 *   **结构与强度分离的重建损失（锁定）**：为避免大量零边主导训练，使用“两项式”损失：
     $$
     \mathcal{L}=\mathcal{L}_{\text{edge}}+\lambda_w\mathcal{L}_{\text{weight}},\quad \lambda_w=1.0
@@ -139,6 +147,9 @@
     \chi(\tau)\approx V - E(\tau) + T(\tau)
     $$
     其中 $V=N$，$E(\tau)$ 为阈值图的边数，$T(\tau)$ 为阈值图的三角形数量（2-simplices）。
+*   **三角形计数细则（锁定）**：对每个阈值 $\tau$，先将 $A_{\log}$ 二值化为无向简单图
+    $$ B(\tau)=\mathbb{1}[A_{\log}\ge\tau] $$
+    忽略权重，仅在 clique complex 下统计 2-simplices；实现上使用稀疏矩阵乘法进行三角形计数（例如基于 $B$ 的乘法与迹/按边局部计数聚合）。
 *   **标准化（锁定）**：对 $\mu(A)$ 的每个 $\tau$ 维度使用训练集统计量做标准化（防泄漏）。
 
 ### 7.3 使用方式

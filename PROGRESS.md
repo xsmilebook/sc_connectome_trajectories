@@ -18,6 +18,7 @@
 - 2026-01-14: Required git commits for any code or documentation edits in `AGENTS.md`.
 - 2026-01-14: Refined README and workflow documentation for morphology submission and summary tables.
 - 2026-01-14: Locked CLG-ODE implementation details (topology conditioning, SC loss decomposition, covariates, and pair sampling).
+- 2026-01-14: Locked ECC triangle counting and edge-score calibration for CLG-ODE.
 
 ## In progress
 
