@@ -2,7 +2,7 @@
 
 
 ## Current focus
-- 2026-01-15: Switch CLG-ODE submission logs and workdir to absolute paths.
+- 2026-01-15: Ensure Slurm directives are parsed by placing them before shell commands.
 
 ## Completed
 - 2026-01-12: Drafted the repo-structure refactor plan in `PLAN.md`.
@@ -26,6 +26,7 @@
 - 2026-01-15: Updated the CLG-ODE submission script to enforce python3 and validate resolved paths.
 - 2026-01-15: Added error handling around path resolution to avoid unbound variables in submission scripts.
 - 2026-01-15: Updated CLG-ODE submission script to use absolute log paths and workdir.
+- 2026-01-15: Moved `set -euo pipefail` below `#SBATCH` lines to keep log directives effective.
 
 ## In progress
 
