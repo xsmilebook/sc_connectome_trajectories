@@ -2,7 +2,7 @@
 
 
 ## Current focus
-- 2026-01-14: Add the torch+CUDA+GNN Singularity container definition and build workflow.
+- 2026-01-15: Fix CLG-ODE submission script to use python3 for path resolution.
 
 ## Completed
 - 2026-01-12: Drafted the repo-structure refactor plan in `PLAN.md`.
@@ -23,6 +23,7 @@
 - 2026-01-14: Replaced `PLAN.md` with the CLG-ODE implementation and execution plan.
 - 2026-01-14: Implemented CLG-ODE spec updates (SC preprocessing, topology conditioning, delta-time sampling), added submission script, and refreshed docs/tests.
 - 2026-01-14: Added the Singularity definition/build script and documented the container workflow.
+- 2026-01-15: Updated the CLG-ODE submission script to enforce python3 and validate resolved paths.
 
 ## In progress
 
