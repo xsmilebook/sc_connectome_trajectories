@@ -11,7 +11,10 @@ from sklearn.model_selection import GroupKFold, GroupShuffleSplit
 
 import torch
 from torch import nn
+import torch.distributed as dist
+from torch.nn.parallel import DistributedDataParallel
 from torch.utils.data import DataLoader, Subset
+from torch.utils.data.distributed import DistributedSampler
 
 from src.data.clg_dataset import CLGDataset, collate_clg_sequences
 from src.data.utils import compute_triu_indices, ensure_dir
@@ -47,6 +50,9 @@ class CLGTrainer:
         topo_bins: int = 32,
         adjacent_pair_prob: float = 0.7,
         solver_steps: int = 8,
+        rank: int = 0,
+        world_size: int = 1,
+        local_rank: int = 0,
     ) -> None:
         self.sc_dir = sc_dir
         self.morph_root = morph_root
@@ -66,9 +72,17 @@ class CLGTrainer:
         self.topo_bins = topo_bins
         self.adjacent_pair_prob = adjacent_pair_prob
         self.solver_steps = solver_steps
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.rank = rank
+        self.world_size = world_size
+        self.local_rank = local_rank
+        self.is_distributed = self.world_size > 1
+        self.is_main = self.rank == 0
+        if torch.cuda.is_available():
+            self.device = torch.device(f"cuda:{self.local_rank}" if self.is_distributed else "cuda")
+        else:
+            self.device = torch.device("cpu")
         self.summary: Dict[str, Any] = {}
-        self._rng = np.random.default_rng(self.random_state)
+        self._rng = np.random.default_rng(self.random_state + self.rank)
 
     def _build_dataset(self) -> CLGDataset:
         return CLGDataset(
@@ -91,10 +105,19 @@ class CLGTrainer:
 
     def _get_loader(self, dataset: CLGDataset, indices: List[int], shuffle: bool) -> DataLoader:
         subset = Subset(dataset, indices)
+        sampler = None
+        if self.is_distributed:
+            sampler = DistributedSampler(
+                subset,
+                num_replicas=self.world_size,
+                rank=self.rank,
+                shuffle=shuffle,
+            )
         return DataLoader(
             subset,
             batch_size=self.batch_size,
-            shuffle=shuffle,
+            shuffle=shuffle if sampler is None else False,
+            sampler=sampler,
             collate_fn=collate_clg_sequences,
         )
 
@@ -103,6 +126,16 @@ class CLGTrainer:
         if self.use_s_mean:
             base += 1
         return base
+
+    def _reduce_loss(self, total_loss: float, count: int) -> float:
+        if count == 0:
+            return math.inf
+        if not self.is_distributed or not dist.is_initialized():
+            return total_loss / count
+        tensor = torch.tensor([total_loss, count], dtype=torch.float32, device=self.device)
+        dist.all_reduce(tensor, op=dist.ReduceOp.SUM)
+        total, cnt = tensor.tolist()
+        return total / cnt if cnt > 0 else math.inf
 
     def _build_model(self, dataset: CLGDataset) -> CLGODE:
         num_nodes = dataset.max_nodes
@@ -123,36 +156,50 @@ class CLGTrainer:
         n_nodes = dataset.max_nodes
         morph_dim = len(dataset.metric_order)
         topo_dim = dataset.topo_bins
-        morph_sum = np.zeros((n_nodes, morph_dim), dtype=np.float64)
-        morph_sumsq = np.zeros((n_nodes, morph_dim), dtype=np.float64)
-        topo_sum = np.zeros((topo_dim,), dtype=np.float64)
-        topo_sumsq = np.zeros((topo_dim,), dtype=np.float64)
-        morph_count = 0
-        topo_count = 0
-        for idx in indices:
-            item = dataset[idx]
-            x = item["x"].numpy()
-            icv = item["icv"].numpy()
-            x = self._apply_volume_norm_np(x, icv, dataset.volume_metric_indices)
-            morph_sum += x.sum(axis=0)
-            morph_sumsq += (x ** 2).sum(axis=0)
-            morph_count += x.shape[0]
-            topo = item["topo"].numpy()
-            topo_sum += topo.sum(axis=0)
-            topo_sumsq += (topo ** 2).sum(axis=0)
-            topo_count += topo.shape[0]
-        morph_mean = morph_sum / max(morph_count, 1)
-        morph_var = morph_sumsq / max(morph_count, 1) - morph_mean ** 2
-        morph_std = np.sqrt(np.maximum(morph_var, 1e-6))
-        topo_mean = topo_sum / max(topo_count, 1)
-        topo_var = topo_sumsq / max(topo_count, 1) - topo_mean ** 2
-        topo_std = np.sqrt(np.maximum(topo_var, 1e-6))
-        return NormStats(
-            morph_mean=torch.from_numpy(morph_mean.astype(np.float32)).to(self.device),
-            morph_std=torch.from_numpy(morph_std.astype(np.float32)).to(self.device),
-            topo_mean=torch.from_numpy(topo_mean.astype(np.float32)).to(self.device),
-            topo_std=torch.from_numpy(topo_std.astype(np.float32)).to(self.device),
-        )
+        if not self.is_distributed or self.is_main:
+            morph_sum = np.zeros((n_nodes, morph_dim), dtype=np.float64)
+            morph_sumsq = np.zeros((n_nodes, morph_dim), dtype=np.float64)
+            topo_sum = np.zeros((topo_dim,), dtype=np.float64)
+            topo_sumsq = np.zeros((topo_dim,), dtype=np.float64)
+            morph_count = 0
+            topo_count = 0
+            for idx in indices:
+                item = dataset[idx]
+                x = item["x"].numpy()
+                icv = item["icv"].numpy()
+                x = self._apply_volume_norm_np(x, icv, dataset.volume_metric_indices)
+                morph_sum += x.sum(axis=0)
+                morph_sumsq += (x ** 2).sum(axis=0)
+                morph_count += x.shape[0]
+                topo = item["topo"].numpy()
+                topo_sum += topo.sum(axis=0)
+                topo_sumsq += (topo ** 2).sum(axis=0)
+                topo_count += topo.shape[0]
+            morph_mean = morph_sum / max(morph_count, 1)
+            morph_var = morph_sumsq / max(morph_count, 1) - morph_mean ** 2
+            morph_std = np.sqrt(np.maximum(morph_var, 1e-6))
+            topo_mean = topo_sum / max(topo_count, 1)
+            topo_var = topo_sumsq / max(topo_count, 1) - topo_mean ** 2
+            topo_std = np.sqrt(np.maximum(topo_var, 1e-6))
+            stats = NormStats(
+                morph_mean=torch.from_numpy(morph_mean.astype(np.float32)).to(self.device),
+                morph_std=torch.from_numpy(morph_std.astype(np.float32)).to(self.device),
+                topo_mean=torch.from_numpy(topo_mean.astype(np.float32)).to(self.device),
+                topo_std=torch.from_numpy(topo_std.astype(np.float32)).to(self.device),
+            )
+        else:
+            stats = NormStats(
+                morph_mean=torch.zeros((n_nodes, morph_dim), dtype=torch.float32, device=self.device),
+                morph_std=torch.ones((n_nodes, morph_dim), dtype=torch.float32, device=self.device),
+                topo_mean=torch.zeros((topo_dim,), dtype=torch.float32, device=self.device),
+                topo_std=torch.ones((topo_dim,), dtype=torch.float32, device=self.device),
+            )
+        if self.is_distributed and dist.is_initialized():
+            dist.broadcast(stats.morph_mean, src=0)
+            dist.broadcast(stats.morph_std, src=0)
+            dist.broadcast(stats.topo_mean, src=0)
+            dist.broadcast(stats.topo_std, src=0)
+        return stats
 
     @staticmethod
     def _apply_volume_norm_np(
@@ -314,9 +361,7 @@ class CLGTrainer:
             optimizer.step()
             total_loss += float(loss.item())
             count += 1
-        if count == 0:
-            return math.inf
-        return total_loss / count
+        return self._reduce_loss(total_loss, count)
 
     def _evaluate(
         self,
@@ -336,9 +381,7 @@ class CLGTrainer:
                 loss = self._compute_loss(model, batch, triu_idx, stats, volume_indices)
                 total_loss += float(loss.item())
                 count += 1
-        if count == 0:
-            return math.inf
-        return total_loss / count
+        return self._reduce_loss(total_loss, count)
 
     def _compute_loss(
         self,
@@ -401,14 +444,26 @@ class CLGTrainer:
             train_loader = self._get_loader(dataset, train_idx, shuffle=True)
             val_loader = self._get_loader(dataset, val_idx, shuffle=False)
             model = self._build_model(dataset).to(self.device)
+            if self.is_distributed and dist.is_initialized():
+                model = DistributedDataParallel(
+                    model,
+                    device_ids=[self.local_rank] if torch.cuda.is_available() else None,
+                )
             optimizer = torch.optim.Adam(model.parameters(), lr=self.learning_rate)
             best_fold_val = math.inf
             best_state = None
             epochs_no_improve = 0
-            print(
-                f"Starting fold {fold_idx + 1}/5 with {len(train_idx)} train subjects and {len(val_idx)} val subjects"
-            )
+            if self.is_main:
+                print(
+                    f"Starting fold {fold_idx + 1}/5 with {len(train_idx)} train subjects and {len(val_idx)} val subjects"
+                )
             for epoch in range(self.max_epochs):
+                if (
+                    self.is_distributed
+                    and dist.is_initialized()
+                    and isinstance(train_loader.sampler, DistributedSampler)
+                ):
+                    train_loader.sampler.set_epoch(epoch)
                 train_loss = self._train_one_epoch(
                     model,
                     train_loader,
@@ -424,36 +479,42 @@ class CLGTrainer:
                     stats,
                     volume_indices,
                 )
-                print(
-                    f"Fold {fold_idx + 1}/5, epoch {epoch + 1}/{self.max_epochs}, "
-                    f"train_loss={train_loss:.4f}, val_loss={val_loss:.4f}"
-                )
+                if self.is_main:
+                    print(
+                        f"Fold {fold_idx + 1}/5, epoch {epoch + 1}/{self.max_epochs}, "
+                        f"train_loss={train_loss:.4f}, val_loss={val_loss:.4f}"
+                    )
                 if val_loss < best_fold_val:
                     best_fold_val = val_loss
-                    best_state = model.state_dict()
+                    if self.is_distributed and dist.is_initialized():
+                        best_state = model.module.state_dict()
+                    else:
+                        best_state = model.state_dict()
                     epochs_no_improve = 0
                 else:
                     epochs_no_improve += 1
                 if epochs_no_improve >= self.patience:
-                    print(
-                        f"Fold {fold_idx + 1}/5 early stopped at epoch {epoch + 1} "
-                        f"with best_val_loss={best_fold_val:.4f}"
-                    )
+                    if self.is_main:
+                        print(
+                            f"Fold {fold_idx + 1}/5 early stopped at epoch {epoch + 1} "
+                            f"with best_val_loss={best_fold_val:.4f}"
+                        )
                     break
             fold_results.append({"fold": fold_idx, "best_val_loss": float(best_fold_val)})
             fold_model_path = os.path.join(
                 self.results_dir,
                 f"clg_ode_fold{fold_idx}_best.pt",
             )
-            if best_state is not None:
+            if best_state is not None and self.is_main:
                 torch.save(best_state, fold_model_path)
             if best_fold_val < best_val:
                 best_val = best_fold_val
                 best_model_path = fold_model_path
                 best_stats = stats
-        self.summary["cv_folds"] = fold_results
-        self.summary["best_val_loss"] = float(best_val)
-        self.summary["best_model_path"] = best_model_path
+        if self.is_main:
+            self.summary["cv_folds"] = fold_results
+            self.summary["best_val_loss"] = float(best_val)
+            self.summary["best_model_path"] = best_model_path
         if best_stats is None:
             raise RuntimeError("No training folds produced a model.")
         return best_model_path, best_stats
@@ -465,6 +526,8 @@ class CLGTrainer:
         subjects = [sid for sid, _ in dataset.sequences]
         trainval_indices, test_indices = self._split_outer(subjects)
         best_model_path, best_stats = self._train_cv(dataset, trainval_indices, subjects)
+        if self.is_distributed and dist.is_initialized():
+            dist.barrier()
         test_loader = self._get_loader(dataset, test_indices, shuffle=False)
         model = self._build_model(dataset).to(self.device)
         if best_model_path and os.path.exists(best_model_path):
@@ -478,17 +541,18 @@ class CLGTrainer:
             best_stats,
             dataset.volume_metric_indices,
         )
-        self.summary["test_loss"] = float(test_loss)
-        self.summary["n_subjects"] = len(dataset)
-        self.summary["n_trainval"] = len(trainval_indices)
-        self.summary["n_test"] = len(test_indices)
-        ensure_dir(self.results_dir)
-        with open(
-            os.path.join(self.results_dir, "clg_ode_results.json"),
-            "w",
-            encoding="utf-8",
-        ) as f:
-            json.dump(self.summary, f, indent=2)
+        if self.is_main:
+            self.summary["test_loss"] = float(test_loss)
+            self.summary["n_subjects"] = len(dataset)
+            self.summary["n_trainval"] = len(trainval_indices)
+            self.summary["n_test"] = len(test_indices)
+            ensure_dir(self.results_dir)
+            with open(
+                os.path.join(self.results_dir, "clg_ode_results.json"),
+                "w",
+                encoding="utf-8",
+            ) as f:
+                json.dump(self.summary, f, indent=2)
 
 
 def kl_divergence(mu: torch.Tensor, logvar: torch.Tensor) -> torch.Tensor:

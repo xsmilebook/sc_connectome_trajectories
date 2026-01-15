@@ -1,8 +1,23 @@
 import os
 import argparse
 
+import torch
+import torch.distributed as dist
+
 from src.engine.clg_trainer import CLGTrainer
 from src.configs.paths import ensure_outputs_logs, get_by_dotted_key, load_simple_yaml, resolve_repo_path
+
+
+def init_distributed() -> tuple[int, int, int]:
+    world_size = int(os.environ.get("WORLD_SIZE", "1"))
+    rank = int(os.environ.get("RANK", "0"))
+    local_rank = int(os.environ.get("LOCAL_RANK", "0"))
+    if world_size > 1:
+        backend = "nccl" if torch.cuda.is_available() else "gloo"
+        if torch.cuda.is_available():
+            torch.cuda.set_device(local_rank)
+        dist.init_process_group(backend=backend, init_method="env://")
+    return rank, world_size, local_rank
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -53,6 +68,7 @@ def main() -> None:
     ensure_outputs_logs()
     parser = build_arg_parser()
     args = parser.parse_args()
+    rank, world_size, local_rank = init_distributed()
     trainer = CLGTrainer(
         sc_dir=args.sc_dir,
         morph_root=args.morph_root,
@@ -71,8 +87,13 @@ def main() -> None:
         topo_bins=args.topo_bins,
         adjacent_pair_prob=args.adjacent_pair_prob,
         solver_steps=args.solver_steps,
+        rank=rank,
+        world_size=world_size,
+        local_rank=local_rank,
     )
     trainer.run()
+    if world_size > 1:
+        dist.destroy_process_group()
 
 
 if __name__ == "__main__":

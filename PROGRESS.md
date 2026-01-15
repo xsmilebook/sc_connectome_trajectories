@@ -2,7 +2,7 @@
 
 
 ## Current focus
-- 2026-01-15: Fix scripts.render_paths invocation to export all required paths.
+- 2026-01-15: Enable multi-GPU CLG-ODE training and update submission time limit.
 
 ## Completed
 - 2026-01-12: Drafted the repo-structure refactor plan in `PLAN.md`.
@@ -28,6 +28,7 @@
 - 2026-01-15: Updated CLG-ODE submission script to use absolute log paths and workdir.
 - 2026-01-15: Moved `set -euo pipefail` below `#SBATCH` lines to keep log directives effective.
 - 2026-01-15: Fixed `scripts.render_paths` usage to include all required path keys in one invocation.
+- 2026-01-15: Added distributed training support (DDP) and updated the submission script to request 4 GPUs with a 48h limit.
 
 ## In progress
 

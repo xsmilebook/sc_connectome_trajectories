@@ -91,6 +91,8 @@ CLG-ODE submission helper (uses paths from `configs/paths.yaml` and a Singularit
 sbatch scripts/submit_clg_ode.sh
 ```
 
+The submission script defaults to 4 GPUs on `q_ai4` and uses `torchrun` for distributed training.
+
 Container build (torch+CUDA+GNN, remote Singularity build):
 
 ```bash

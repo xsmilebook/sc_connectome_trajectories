@@ -137,6 +137,8 @@ python -m scripts.train_clg_ode \
 sbatch scripts/submit_clg_ode.sh
 ```
 
+该脚本默认申请 `q_ai4` 的 4 张 GPU，并通过 `torchrun` 启动分布式训练。可按需调整 `#SBATCH --gres` 与 `#SBATCH -t`。
+
 训练脚本会在 `--results_dir` 下保存：
 
 - 最优 fold 的模型权重（`.pt`）
