@@ -14,15 +14,20 @@ if ! command -v python3 >/dev/null 2>&1; then
   exit 1
 fi
 
-eval "$(python3 -m scripts.render_paths \
+render_paths_output="$(python3 -m scripts.render_paths \
   --set CONTAINER=local.containers.torch_gnn \
   --set SC_DIR=local.data.sc_connectome_schaefer400 \
   --set MORPH_ROOT=local.data.morphology \
   --set SUBJECT_INFO=local.data.subject_info_sc \
   --set RESULTS_DIR=local.outputs.clg_ode \
-  --resolve)"
+  --resolve)" || {
+  echo "Failed to resolve paths via scripts.render_paths; check Python environment." >&2
+  exit 1
+}
 
-if [[ -z "${CONTAINER}" || -z "${SC_DIR}" || -z "${MORPH_ROOT}" || -z "${SUBJECT_INFO}" || -z "${RESULTS_DIR}" ]]; then
+eval "$render_paths_output"
+
+if [[ -z "${CONTAINER:-}" || -z "${SC_DIR:-}" || -z "${MORPH_ROOT:-}" || -z "${SUBJECT_INFO:-}" || -z "${RESULTS_DIR:-}" ]]; then
   echo "Missing required path(s); check configs/paths.yaml and scripts.render_paths output." >&2
   exit 1
 fi
