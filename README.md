@@ -80,6 +80,7 @@ Notes:
 - CLG-ODE expects morphology CSVs named `Schaefer400_Morphology_<subid>.csv` under `--morph_root`.
 - The trainer uses the `age`, `sex`, and `siteid` columns in `subject_info_sc.csv`, with delta-time integration and `age0` as a covariate.
 - Topology conditioning uses ECC features; this repo also supports an experimental Betti-curve topology loss (see `docs/methods.md`).
+- Training uses top-k sparsified predictions (k=number of true positive edges) for weight/topology losses to align with sparse SC structure.
 - `s_mean` is enabled by default; disable via `--disable_s_mean` if needed.
 - The default training objective supports subjects with 1/2/3 timepoints (tiered `L_manifold`, `L_vel`, `L_acc`) and writes a per-run directory under `--results_dir/runs/<timestamp>_job<jobid>/` containing `args.json`, `run_meta.json`, and `metrics.csv` for reproducibility.
 - Test-time SC evaluation metrics are written to `test_sc_metrics.json` in the run directory (log-domain MSE/MAE/pearson + masked/top-k/sparse pearson + ECC similarity; deterministic t0→t1 pairing).

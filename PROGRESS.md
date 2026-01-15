@@ -2,7 +2,7 @@
 
 
 ## Current focus
-- 2026-01-15: Add sparse-graph Pearson metric for top-k sparsified predictions.
+- 2026-01-15: Apply top-k sparsification during training for weight/topology losses.
 
 ## Completed
 - 2026-01-12: Drafted the repo-structure refactor plan in `PLAN.md`.
@@ -42,6 +42,7 @@
 - 2026-01-15: Added an experimental topology loss based on Betti curves (β0/β1) to constrain connected components and cycles.
 - 2026-01-15: Added masked and top-k Pearson correlations for SC evaluation to align sparse comparisons.
 - 2026-01-15: Added a full-graph Pearson computed after top-k sparsification (`sc_log_pearson_sparse`).
+- 2026-01-15: Applied top-k sparsification during training for `L_weight` and `L_topo`.
 
 ## In progress
 

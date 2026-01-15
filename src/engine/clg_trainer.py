@@ -514,23 +514,11 @@ class CLGTrainer:
         else:
             corr_pos = 0.0
 
+        pred_sparse, mask = self._sparsify_pred(pred_weight, true_raw, triu_idx)
         true_vec = true_raw[triu_idx[0], triu_idx[1]]
-        pos_count = int((true_vec > 0).sum().item())
         corr_topk = 0.0
-        if pos_count > 0:
-            topk = torch.topk(pred_vec, k=pos_count, largest=True)
-            mask = torch.zeros_like(pred_vec, dtype=torch.bool)
-            mask[topk.indices] = True
-            if int(mask.sum().item()) > 1:
-                corr_topk = self._pearsonr_torch(pred_vec[mask], true_vec[mask])
-            pred_sparse = torch.zeros_like(pred_weight)
-            triu0, triu1 = triu_idx
-            pred_sparse[triu0, triu1] = torch.where(mask, pred_vec, torch.zeros_like(pred_vec))
-            pred_sparse = pred_sparse + pred_sparse.transpose(-1, -2)
-        else:
-            pred_sparse = torch.zeros_like(pred_weight)
-        pred_sparse = pred_sparse - torch.diag_embed(torch.diagonal(pred_sparse, dim1=-2, dim2=-1))
-
+        if mask is not None and int(mask.sum().item()) > 1:
+            corr_topk = self._pearsonr_torch(pred_vec[mask], true_vec[mask])
         pred_sparse_log = torch.log1p(pred_sparse)
         pred_sparse_vec = pred_sparse_log[triu_idx[0], triu_idx[1]]
         corr_sparse = self._pearsonr_torch(pred_sparse_vec, true_vec)
@@ -551,6 +539,26 @@ class CLGTrainer:
             "ecc_l2": ecc_l2,
             "ecc_pearson": ecc_corr,
         }
+
+    @staticmethod
+    def _sparsify_pred(
+        pred_weight: torch.Tensor,
+        true_raw: torch.Tensor,
+        triu_idx: Tuple[np.ndarray, np.ndarray],
+    ) -> Tuple[torch.Tensor, torch.Tensor | None]:
+        true_vec = true_raw[triu_idx[0], triu_idx[1]]
+        pos_count = int((true_vec > 0).sum().item())
+        if pos_count <= 0:
+            return torch.zeros_like(pred_weight), None
+        pred_vec = pred_weight[triu_idx[0], triu_idx[1]]
+        topk = torch.topk(pred_vec, k=pos_count, largest=True)
+        mask = torch.zeros_like(pred_vec, dtype=torch.bool)
+        mask[topk.indices] = True
+        pred_sparse = torch.zeros_like(pred_weight)
+        pred_sparse[triu_idx[0], triu_idx[1]] = torch.where(mask, pred_vec, torch.zeros_like(pred_vec))
+        pred_sparse = pred_sparse + pred_sparse.transpose(-1, -2)
+        pred_sparse = pred_sparse - torch.diag_embed(torch.diagonal(pred_sparse, dim1=-2, dim2=-1))
+        return pred_sparse, mask
 
     def _prepare_pair_batch(
         self,
@@ -818,9 +826,10 @@ class CLGTrainer:
                 cov,
                 use_mu=True,
             )
+            pred_sparse_i, _ = self._sparsify_pred(outputs_denoise.a_weight[0, 0], a_raw[b, i], triu_idx)
             lx, le, lw = self._recon_losses(
                 outputs_denoise.a_logit[:, 0],
-                outputs_denoise.a_weight[:, 0],
+                pred_sparse_i.unsqueeze(0),
                 outputs_denoise.x_hat[:, 0],
                 a_raw[b, i].unsqueeze(0),
                 x_i.unsqueeze(0),
@@ -828,7 +837,7 @@ class CLGTrainer:
             )
             manifold = lx + le + self.lambda_weight * lw
             topo_loss_i = self._betti_curve_loss(
-                outputs_denoise.a_weight[0, 0],
+                pred_sparse_i,
                 a_raw[b, i],
                 triu_idx,
             )
@@ -854,9 +863,10 @@ class CLGTrainer:
                     cov,
                     use_mu=True,
                 )
+                pred_sparse_j, _ = self._sparsify_pred(outputs_fore.a_weight[0, -1], a_raw[b, j], triu_idx)
                 lxj, lej, lwj = self._recon_losses(
                     outputs_fore.a_logit[:, -1],
-                    outputs_fore.a_weight[:, -1],
+                    pred_sparse_j.unsqueeze(0),
                     outputs_fore.x_hat[:, -1],
                     a_raw[b, j].unsqueeze(0),
                     self._zscore(
@@ -868,7 +878,7 @@ class CLGTrainer:
                 )
                 manifold = manifold + (lxj + lej + self.lambda_weight * lwj)
                 topo_loss_j = self._betti_curve_loss(
-                    outputs_fore.a_weight[0, -1],
+                    pred_sparse_j,
                     a_raw[b, j],
                     triu_idx,
                 )
@@ -903,9 +913,10 @@ class CLGTrainer:
                     cov,
                     use_mu=True,
                 )
+                pred_sparse_k, _ = self._sparsify_pred(outputs_fore_k.a_weight[0, -1], a_raw[b, k], triu_idx)
                 lxk, lek, lwk = self._recon_losses(
                     outputs_fore_k.a_logit[:, -1],
-                    outputs_fore_k.a_weight[:, -1],
+                    pred_sparse_k.unsqueeze(0),
                     outputs_fore_k.x_hat[:, -1],
                     a_raw[b, k].unsqueeze(0),
                     self._zscore(
@@ -917,7 +928,7 @@ class CLGTrainer:
                 )
                 manifold = manifold + 0.5 * (lxk + lek + self.lambda_weight * lwk)
                 topo_loss_k = self._betti_curve_loss(
-                    outputs_fore_k.a_weight[0, -1],
+                    pred_sparse_k,
                     a_raw[b, k],
                     triu_idx,
                 )

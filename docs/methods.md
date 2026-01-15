@@ -70,6 +70,14 @@
 - `L_topo = mean_τ[ Huber(β0_pred(τ) - β0_true(τ)) + Huber(β1_pred(τ) - β1_true(τ)) ]`
 - 总损失加权：`L += λ_topo * L_topo`（默认 `λ_topo=0.1`）。
 
+### 稀疏化训练（预测图）
+
+鉴于真实 SC 为硬稀疏，本实现对**预测权重**执行 top-k 稀疏化（k 取真实正边数），并用于：
+- 权重回归项（`L_weight`）与拓扑损失（`L_topo`）。
+- 边存在性 BCE 仍使用 dense logit 以保留负边监督。
+
+注意：该稀疏化仅用于 loss 计算与拓扑约束，输出的 `a_logit`/`a_weight` 仍为 dense，可通过评估时的 `top-k` 指标进行对齐比较。
+
 ## 训练与评估口径
 
 ### 数据划分

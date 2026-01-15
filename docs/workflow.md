@@ -136,6 +136,7 @@ python -m scripts.train_clg_ode \
 - 测试评估当前仅覆盖 SC；单时间点被试使用重建输出评估，多时间点被试使用 `i→j` 预测输出评估。
 - 测试评估采用固定的 `t0→t1` 对（避免随机性），ECC 评估时对预测矩阵做 top-k 稀疏化（k 为真实正边数）。
 - 拓扑损失（Betti curve）为实验性增强项，默认启用；细节见 `docs/methods.md`。
+- 训练阶段对预测权重执行 top-k 稀疏化用于 `L_weight` 与 `L_topo`，与真实稀疏结构对齐（见 `docs/methods.md`）。
 
 按 fold 拆分提交（单卡替代多卡）：
 
