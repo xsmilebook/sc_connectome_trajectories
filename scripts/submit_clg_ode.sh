@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH -J clg_ode
 #SBATCH -p q_ai4
-#SBATCH --gres=gpu:4
+#SBATCH --gres=gpu:1
 #SBATCH -t 48:00:00
 #SBATCH -D /ibmgpfs/cuizaixu_lab/xuhaoshu/projects/sc_connectome_trajectories
 #SBATCH -o /ibmgpfs/cuizaixu_lab/xuhaoshu/projects/sc_connectome_trajectories/outputs/logs/%j.out
@@ -34,9 +34,15 @@ if [[ -z "${CONTAINER:-}" || -z "${SC_DIR:-}" || -z "${MORPH_ROOT:-}" || -z "${S
   exit 1
 fi
 
-GPUS_PER_NODE="${SLURM_GPUS_ON_NODE:-4}"
 PYTHON_BIN="/opt/conda/bin/python"
 TORCHRUN_BIN="/opt/conda/bin/torchrun"
+FOLD_ID="${SLURM_ARRAY_TASK_ID:-}"
+RUN_SUFFIX=""
+FOLD_ARGS=()
+if [[ -n "${FOLD_ID}" ]]; then
+  RUN_SUFFIX="_fold${FOLD_ID}"
+  FOLD_ARGS=(--cv_fold "${FOLD_ID}")
+fi
 
 singularity exec --nv \
   --bind /ibmgpfs:/ibmgpfs \
@@ -52,8 +58,10 @@ singularity exec --nv \
   --bind /ibmgpfs:/ibmgpfs \
   --bind /GPFS:/GPFS \
   "$CONTAINER" \
-  "$TORCHRUN_BIN" --nproc_per_node "$GPUS_PER_NODE" -m scripts.train_clg_ode \
+  "$TORCHRUN_BIN" --nproc_per_node 1 -m scripts.train_clg_ode \
     --sc_dir "$SC_DIR" \
     --morph_root "$MORPH_ROOT" \
     --subject_info_csv "$SUBJECT_INFO" \
-    --results_dir "$RESULTS_DIR"
+    --results_dir "$RESULTS_DIR" \
+    --run_name "clg_ode${RUN_SUFFIX}" \
+    "${FOLD_ARGS[@]}"
