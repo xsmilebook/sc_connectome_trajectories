@@ -114,6 +114,15 @@ python -m scripts.train_clg_ode \
   --results_dir outputs/results/clg_ode
 ```
 
+运行目录与记录追溯：
+
+- 训练脚本默认在 `--results_dir/runs/<timestamp>_job<jobid>/` 下创建独立运行目录（不需要手动指定），并将该运行目录作为本次训练的实际输出位置。
+- 运行目录中会保存：
+  - `args.json`：完整 CLI 参数快照
+  - `run_meta.json`：时间戳、Slurm jobid、world size、git 信息等元数据
+  - `metrics.csv`：按 fold×epoch 记录的 train/val 总损失与 `L_manifold/L_vel/L_acc` 组件
+- 如需固定运行目录名称（便于复现实验分组），可使用 `--run_name <name>` 覆盖默认命名。
+
 训练实现要点（与 `docs/reports/implementation_specification.md` 一致）：
 
 - ODE 使用 `Δt = age(t) - age0`，`age0` 作为协变量输入动力学函数。
@@ -121,6 +130,8 @@ python -m scripts.train_clg_ode \
 - 形态学特征按 ROI×Metric 列在训练集上做 Z-score（含可选 ICV/TIV 归一化）。
 - 拓扑特征（ECC 向量）仅作条件输入，不参与训练 loss。
 - 采用多起点配对采样：相邻访视 70%，任意 i<j 组合 30%。
+- 默认启用轻量去噪增强（train-only）：形态学高斯噪声（`morph_noise_sigma=0.05`）与 SC 正边 dropout（`sc_pos_edge_drop_prob=0.02`）。
+- 支持 1/2/3 个时间点的被试共同训练（Tier 3/2/1）；对应 `L_manifold/L_vel/L_acc` 的启用与 warmup 见 `docs/methods.md`。
 
 可选参数示例：
 
@@ -159,6 +170,20 @@ sbatch scripts/submit_clg_ode.sh
 ```bash
 bash scripts/build_torch_gnn_container.sh
 ```
+
+## 数据分层统计（Tier 1/2/3）
+
+如需统计“严格文件存在性”下可用于 CLG-ODE 训练的被试数量（按可用 session 数分层），可运行：
+
+```bash
+python -m scripts.report_clg_ode_tiers
+```
+
+该脚本默认读取 `configs/paths.yaml` 的 `local.data.sc_connectome_schaefer400` 与 `local.data.morphology`，并在 `docs/reports/` 下生成：
+
+- `clg_ode_dataset_tiers.md`
+- `clg_ode_dataset_tiers.json`
+- `clg_ode_dataset_tiers_subjects.csv`
 
 ## 更新说明
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import csv
 from dataclasses import dataclass
 from typing import Any, Dict, List, Tuple
 
@@ -15,6 +16,7 @@ import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel
 from torch.utils.data import DataLoader, Subset
 from torch.utils.data.distributed import DistributedSampler
+from torch.nn import functional as F
 
 from src.data.clg_dataset import CLGDataset, collate_clg_sequences
 from src.data.utils import compute_triu_indices, ensure_dir
@@ -50,6 +52,13 @@ class CLGTrainer:
         topo_bins: int = 32,
         adjacent_pair_prob: float = 0.7,
         solver_steps: int = 8,
+        lambda_manifold: float = 1.0,
+        lambda_vel: float = 0.1,
+        lambda_acc: float = 0.05,
+        warmup_manifold_epochs: int = 5,
+        warmup_vel_epochs: int = 10,
+        morph_noise_sigma: float = 0.05,
+        sc_pos_edge_drop_prob: float = 0.02,
         rank: int = 0,
         world_size: int = 1,
         local_rank: int = 0,
@@ -72,6 +81,13 @@ class CLGTrainer:
         self.topo_bins = topo_bins
         self.adjacent_pair_prob = adjacent_pair_prob
         self.solver_steps = solver_steps
+        self.lambda_manifold = lambda_manifold
+        self.lambda_vel = lambda_vel
+        self.lambda_acc = lambda_acc
+        self.warmup_manifold_epochs = warmup_manifold_epochs
+        self.warmup_vel_epochs = warmup_vel_epochs
+        self.morph_noise_sigma = morph_noise_sigma
+        self.sc_pos_edge_drop_prob = sc_pos_edge_drop_prob
         self.rank = rank
         self.world_size = world_size
         self.local_rank = local_rank
@@ -83,6 +99,7 @@ class CLGTrainer:
             self.device = torch.device("cpu")
         self.summary: Dict[str, Any] = {}
         self._rng = np.random.default_rng(self.random_state + self.rank)
+        self.metrics_csv_path = os.path.join(self.results_dir, "metrics.csv")
 
     def _build_dataset(self) -> CLGDataset:
         return CLGDataset(
@@ -90,6 +107,7 @@ class CLGTrainer:
             morph_root=self.morph_root,
             subject_info_csv=self.subject_info_csv,
             topo_bins=self.topo_bins,
+            min_length=1,
         )
 
     def _split_outer(self, subjects: List[str]) -> Tuple[List[int], List[int]]:
@@ -136,6 +154,25 @@ class CLGTrainer:
         dist.all_reduce(tensor, op=dist.ReduceOp.SUM)
         total, cnt = tensor.tolist()
         return total / cnt if cnt > 0 else math.inf
+
+    def _reduce_sum_count(self, total: float, count: int) -> Tuple[float, int]:
+        if not self.is_distributed or not dist.is_initialized():
+            return total, count
+        tensor = torch.tensor([total, count], dtype=torch.float32, device=self.device)
+        dist.all_reduce(tensor, op=dist.ReduceOp.SUM)
+        total_out, count_out = tensor.tolist()
+        return float(total_out), int(count_out)
+
+    def _append_metrics_row(self, row: Dict[str, Any]) -> None:
+        if not self.is_main:
+            return
+        ensure_dir(self.results_dir)
+        write_header = not os.path.exists(self.metrics_csv_path)
+        with open(self.metrics_csv_path, "a", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=list(row.keys()))
+            if write_header:
+                writer.writeheader()
+            writer.writerow(row)
 
     def _build_model(self, dataset: CLGDataset) -> CLGODE:
         num_nodes = dataset.max_nodes
@@ -253,6 +290,56 @@ class CLGTrainer:
         j = int(self._rng.integers(i + 1, length))
         return i, j
 
+    def _sample_triplet(self, length: int) -> Tuple[int, int, int]:
+        if length < 3:
+            return 0, min(1, length - 1), min(2, length - 1)
+        if self._rng.random() < self.adjacent_pair_prob:
+            i = int(self._rng.integers(0, length - 2))
+            return i, i + 1, i + 2
+        i = int(self._rng.integers(0, length - 2))
+        j = int(self._rng.integers(i + 1, length - 1))
+        k = int(self._rng.integers(j + 1, length))
+        return i, j, k
+
+    @staticmethod
+    def _clamp_dt(dt: float, fallback: float) -> float:
+        if not np.isfinite(dt) or dt <= 0:
+            dt = fallback
+        return float(max(dt, 1e-3))
+
+    @staticmethod
+    def _drop_positive_edges(a_log: torch.Tensor, a_raw: torch.Tensor, p: float) -> torch.Tensor:
+        if p <= 0:
+            return a_log
+        with torch.no_grad():
+            pos = a_raw > 0
+            tri = torch.triu(pos, diagonal=1)
+            if tri.sum().item() == 0:
+                return a_log
+            drop = (torch.rand_like(a_log) < p) & tri
+            drop = drop | drop.transpose(-1, -2)
+        out = a_log.clone()
+        out[drop] = 0.0
+        return out
+
+    def _recon_losses(
+        self,
+        a_logit: torch.Tensor,
+        a_weight: torch.Tensor,
+        x_hat: torch.Tensor,
+        a_true_raw: torch.Tensor,
+        x_true: torch.Tensor,
+        triu_idx: Tuple[np.ndarray, np.ndarray],
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        loss_x = torch.mean((x_hat - x_true) ** 2)
+        logit_vec = a_logit[:, triu_idx[0], triu_idx[1]]
+        target_vec = (a_true_raw[:, triu_idx[0], triu_idx[1]] > 0).float()
+        loss_edge = edge_bce_loss(logit_vec, target_vec, pos_weight=5.0)
+        pred_log = torch.log1p(a_weight[:, triu_idx[0], triu_idx[1]])
+        true_log = torch.log1p(a_true_raw[:, triu_idx[0], triu_idx[1]])
+        loss_weight = weight_huber_loss(pred_log, true_log, target_vec)
+        return loss_x, loss_edge, loss_weight
+
     def _prepare_pair_batch(
         self,
         batch: Dict[str, torch.Tensor],
@@ -348,19 +435,41 @@ class CLGTrainer:
         triu_idx: Tuple[np.ndarray, np.ndarray],
         stats: NormStats,
         volume_indices: List[int],
+        epoch: int,
     ) -> float:
         model.train()
         total_loss = 0.0
         count = 0
+        m_sum = 0.0
+        v_sum = 0.0
+        a_sum = 0.0
+        m_count = 0
+        v_count = 0
+        a_count = 0
         for batch in loader:
             if not batch:
                 continue
-            loss = self._compute_loss(model, batch, triu_idx, stats, volume_indices)
+            loss, metrics = self._compute_loss(model, batch, triu_idx, stats, volume_indices, epoch)
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
             total_loss += float(loss.item())
             count += 1
+            m_sum += metrics["manifold_sum"]
+            v_sum += metrics["vel_sum"]
+            a_sum += metrics["acc_sum"]
+            m_count += metrics["manifold_count"]
+            v_count += metrics["vel_count"]
+            a_count += metrics["acc_count"]
+        m_sum, m_count = self._reduce_sum_count(m_sum, m_count)
+        v_sum, v_count = self._reduce_sum_count(v_sum, v_count)
+        a_sum, a_count = self._reduce_sum_count(a_sum, a_count)
+        if self.is_main:
+            self._last_epoch_train_metrics = {
+                "manifold": (m_sum / m_count) if m_count > 0 else 0.0,
+                "vel": (v_sum / v_count) if v_count > 0 else 0.0,
+                "acc": (a_sum / a_count) if a_count > 0 else 0.0,
+            }
         return self._reduce_loss(total_loss, count)
 
     def _evaluate(
@@ -370,57 +479,271 @@ class CLGTrainer:
         triu_idx: Tuple[np.ndarray, np.ndarray],
         stats: NormStats,
         volume_indices: List[int],
+        epoch: int,
     ) -> float:
         model.eval()
         total_loss = 0.0
         count = 0
+        m_sum = 0.0
+        v_sum = 0.0
+        a_sum = 0.0
+        m_count = 0
+        v_count = 0
+        a_count = 0
         with torch.no_grad():
             for batch in loader:
                 if not batch:
                     continue
-                loss = self._compute_loss(model, batch, triu_idx, stats, volume_indices)
+                loss, metrics = self._compute_loss(model, batch, triu_idx, stats, volume_indices, epoch)
                 total_loss += float(loss.item())
                 count += 1
+                m_sum += metrics["manifold_sum"]
+                v_sum += metrics["vel_sum"]
+                a_sum += metrics["acc_sum"]
+                m_count += metrics["manifold_count"]
+                v_count += metrics["vel_count"]
+                a_count += metrics["acc_count"]
+        m_sum, m_count = self._reduce_sum_count(m_sum, m_count)
+        v_sum, v_count = self._reduce_sum_count(v_sum, v_count)
+        a_sum, a_count = self._reduce_sum_count(a_sum, a_count)
+        if self.is_main:
+            self._last_epoch_val_metrics = {
+                "manifold": (m_sum / m_count) if m_count > 0 else 0.0,
+                "vel": (v_sum / v_count) if v_count > 0 else 0.0,
+                "acc": (a_sum / a_count) if a_count > 0 else 0.0,
+            }
         return self._reduce_loss(total_loss, count)
 
     def _compute_loss(
         self,
-        model: CLGODE,
+        model: nn.Module,
         batch: Dict[str, torch.Tensor],
         triu_idx: Tuple[np.ndarray, np.ndarray],
         stats: NormStats,
         volume_indices: List[int],
-    ) -> torch.Tensor:
-        prepared = self._prepare_pair_batch(batch, stats, volume_indices)
-        outputs = model(
-            prepared["a0"],
-            prepared["x0"],
-            prepared["times"],
-            prepared["sex"],
-            prepared["site"],
-            prepared["cov"],
-        )
-        a_logit = outputs.a_logit[:, -1]
-        a_weight = outputs.a_weight[:, -1]
-        x_hat = outputs.x_hat[:, -1]
-        a_true = prepared["a_t"]
-        x_true = prepared["x_t"]
+        epoch: int,
+    ) -> Tuple[torch.Tensor, Dict[str, Any]]:
+        lengths = batch["lengths"].tolist()
+        a_raw = batch["a_raw"].to(self.device)
+        a_log = batch["a_log"].to(self.device)
+        x = batch["x"].to(self.device)
+        ages = batch["ages"].to(self.device)
+        topo = batch["topo"].to(self.device)
+        strength = batch["strength"].to(self.device)
+        icv = batch["icv"].to(self.device)
+        sex = batch["sex"].to(self.device)
+        site = batch["site"].to(self.device)
 
-        loss_morph = torch.mean((x_hat - x_true) ** 2)
+        enable_vel = epoch >= self.warmup_manifold_epochs
+        enable_acc = epoch >= self.warmup_vel_epochs
 
-        logit_vec = a_logit[:, triu_idx[0], triu_idx[1]]
-        target_vec = (a_true[:, triu_idx[0], triu_idx[1]] > 0).float()
-        loss_edge = edge_bce_loss(logit_vec, target_vec, pos_weight=5.0)
+        loss_manifold = []
+        loss_vel = []
+        loss_acc = []
 
-        pred_log = torch.log1p(a_weight[:, triu_idx[0], triu_idx[1]])
-        true_log = torch.log1p(a_true[:, triu_idx[0], triu_idx[1]])
-        loss_weight = weight_huber_loss(pred_log, true_log, target_vec)
+        for b, length in enumerate(lengths):
+            if length >= 3:
+                i, j, k = self._sample_triplet(length)
+            elif length == 2:
+                i, j = self._sample_pair(length)
+                k = None
+            else:
+                i, j, k = 0, None, None
 
-        kl_morph = kl_divergence(outputs.mu_morph, outputs.logvar_morph)
-        kl_conn = kl_divergence(outputs.mu_conn, outputs.logvar_conn)
-        loss_kl = 0.5 * (kl_morph + kl_conn)
+            age_i = float(ages[b, i].item())
+            if not np.isfinite(age_i):
+                age_i = float(i)
+            topo_i = self._zscore(topo[b, i], stats.topo_mean, stats.topo_std)
+            strength_i = strength[b, i]
+            if self.use_s_mean:
+                cov = torch.cat([torch.tensor([age_i], device=self.device), strength_i, topo_i], dim=0)
+            else:
+                cov = torch.cat([torch.tensor([age_i], device=self.device), strength_i[:1], topo_i], dim=0)
+            cov = cov.unsqueeze(0)
+            sex_b = sex[b : b + 1]
+            site_b = site[b : b + 1]
 
-        return loss_morph + loss_edge + self.lambda_weight * loss_weight + self.lambda_kl * loss_kl
+            x_i = self._apply_volume_norm_torch(x[b, i], icv[b, i], volume_indices)
+            x_i = self._zscore(x_i, stats.morph_mean, stats.morph_std)
+            x_i_noisy = x_i + torch.randn_like(x_i) * float(self.morph_noise_sigma)
+
+            a_i_log_clean = a_log[b, i]
+            a_i_log_noisy = self._drop_positive_edges(a_i_log_clean, a_raw[b, i], self.sc_pos_edge_drop_prob)
+
+            times0 = torch.zeros((1, 1), dtype=torch.float32, device=self.device)
+            outputs_i = model(
+                a_i_log_clean.unsqueeze(0),
+                x_i.unsqueeze(0),
+                times0,
+                sex_b,
+                site_b,
+                cov,
+                use_mu=True,
+            )
+            outputs_denoise = model(
+                a_i_log_noisy.unsqueeze(0),
+                x_i_noisy.unsqueeze(0),
+                times0,
+                sex_b,
+                site_b,
+                cov,
+                use_mu=True,
+            )
+            lx, le, lw = self._recon_losses(
+                outputs_denoise.a_logit[:, 0],
+                outputs_denoise.a_weight[:, 0],
+                outputs_denoise.x_hat[:, 0],
+                a_raw[b, i].unsqueeze(0),
+                x_i.unsqueeze(0),
+                triu_idx,
+            )
+            manifold = lx + le + self.lambda_weight * lw
+
+            z_enc_i = torch.cat([outputs_i.z_morph[:, 0], outputs_i.z_conn[:, 0]], dim=-1)
+
+            z_enc_j = None
+            z_enc_k = None
+            z_pred_j = None
+            z_pred_k = None
+
+            if j is not None:
+                age_j = float(ages[b, j].item())
+                dt_ij = self._clamp_dt(age_j - age_i, float(j - i))
+                times = torch.tensor([[0.0, dt_ij]], dtype=torch.float32, device=self.device)
+                outputs_fore = model(
+                    a_i_log_clean.unsqueeze(0),
+                    x_i.unsqueeze(0),
+                    times,
+                    sex_b,
+                    site_b,
+                    cov,
+                    use_mu=True,
+                )
+                lxj, lej, lwj = self._recon_losses(
+                    outputs_fore.a_logit[:, -1],
+                    outputs_fore.a_weight[:, -1],
+                    outputs_fore.x_hat[:, -1],
+                    a_raw[b, j].unsqueeze(0),
+                    self._zscore(
+                        self._apply_volume_norm_torch(x[b, j], icv[b, j], volume_indices),
+                        stats.morph_mean,
+                        stats.morph_std,
+                    ).unsqueeze(0),
+                    triu_idx,
+                )
+                manifold = manifold + (lxj + lej + self.lambda_weight * lwj)
+                z_pred_j = torch.cat([outputs_fore.z_morph[:, -1], outputs_fore.z_conn[:, -1]], dim=-1)
+
+                outputs_j = model(
+                    a_log[b, j].unsqueeze(0),
+                    self._zscore(
+                        self._apply_volume_norm_torch(x[b, j], icv[b, j], volume_indices),
+                        stats.morph_mean,
+                        stats.morph_std,
+                    ).unsqueeze(0),
+                    times0,
+                    sex_b,
+                    site_b,
+                    cov,
+                    use_mu=True,
+                )
+                z_enc_j = torch.cat([outputs_j.z_morph[:, 0], outputs_j.z_conn[:, 0]], dim=-1)
+
+            if k is not None:
+                age_k = float(ages[b, k].item())
+                dt_ik = self._clamp_dt(age_k - age_i, float(k - i))
+                times = torch.tensor([[0.0, dt_ik]], dtype=torch.float32, device=self.device)
+                outputs_fore_k = model(
+                    a_i_log_clean.unsqueeze(0),
+                    x_i.unsqueeze(0),
+                    times,
+                    sex_b,
+                    site_b,
+                    cov,
+                    use_mu=True,
+                )
+                lxk, lek, lwk = self._recon_losses(
+                    outputs_fore_k.a_logit[:, -1],
+                    outputs_fore_k.a_weight[:, -1],
+                    outputs_fore_k.x_hat[:, -1],
+                    a_raw[b, k].unsqueeze(0),
+                    self._zscore(
+                        self._apply_volume_norm_torch(x[b, k], icv[b, k], volume_indices),
+                        stats.morph_mean,
+                        stats.morph_std,
+                    ).unsqueeze(0),
+                    triu_idx,
+                )
+                manifold = manifold + 0.5 * (lxk + lek + self.lambda_weight * lwk)
+                z_pred_k = torch.cat([outputs_fore_k.z_morph[:, -1], outputs_fore_k.z_conn[:, -1]], dim=-1)
+
+                outputs_k = model(
+                    a_log[b, k].unsqueeze(0),
+                    self._zscore(
+                        self._apply_volume_norm_torch(x[b, k], icv[b, k], volume_indices),
+                        stats.morph_mean,
+                        stats.morph_std,
+                    ).unsqueeze(0),
+                    times0,
+                    sex_b,
+                    site_b,
+                    cov,
+                    use_mu=True,
+                )
+                z_enc_k = torch.cat([outputs_k.z_morph[:, 0], outputs_k.z_conn[:, 0]], dim=-1)
+
+            loss_manifold.append(manifold)
+
+            if enable_vel and (j is not None) and (z_enc_j is not None) and (z_pred_j is not None):
+                dt_ij_t = torch.tensor(dt_ij, dtype=torch.float32, device=self.device)
+                v_obs = (z_enc_j.detach() - z_enc_i.detach()) / dt_ij_t
+                v_model = (z_pred_j - z_enc_i) / dt_ij_t
+                loss_vel.append(F.smooth_l1_loss(v_model, v_obs))
+
+            if (
+                enable_acc
+                and (j is not None)
+                and (k is not None)
+                and (z_enc_j is not None)
+                and (z_enc_k is not None)
+                and (z_pred_j is not None)
+                and (z_pred_k is not None)
+            ):
+                age_j = float(ages[b, j].item())
+                age_k = float(ages[b, k].item())
+                dt_ij = self._clamp_dt(age_j - age_i, float(j - i))
+                dt_jk = self._clamp_dt(age_k - age_j, float(k - j))
+                denom = torch.tensor(dt_ij + dt_jk, dtype=torch.float32, device=self.device)
+                dt_ij_t = torch.tensor(dt_ij, dtype=torch.float32, device=self.device)
+                dt_jk_t = torch.tensor(dt_jk, dtype=torch.float32, device=self.device)
+
+                v_obs_ij = (z_enc_j.detach() - z_enc_i.detach()) / dt_ij_t
+                v_obs_jk = (z_enc_k.detach() - z_enc_j.detach()) / dt_jk_t
+                a_obs = 2.0 * (v_obs_jk - v_obs_ij) / denom
+
+                v_model_ij = (z_pred_j - z_enc_i) / dt_ij_t
+                v_model_jk = (z_pred_k - z_pred_j) / dt_jk_t
+                a_model = 2.0 * (v_model_jk - v_model_ij) / denom
+                loss_acc.append(F.smooth_l1_loss(a_model, a_obs))
+
+        mean_manifold = torch.stack(loss_manifold).mean() if loss_manifold else torch.tensor(0.0, device=self.device)
+        mean_vel = torch.stack(loss_vel).mean() if loss_vel else torch.tensor(0.0, device=self.device)
+        mean_acc = torch.stack(loss_acc).mean() if loss_acc else torch.tensor(0.0, device=self.device)
+
+        total = self.lambda_manifold * mean_manifold
+        if enable_vel:
+            total = total + self.lambda_vel * mean_vel
+        if enable_acc:
+            total = total + self.lambda_acc * mean_acc
+        metrics = {
+            "manifold_sum": float(mean_manifold.detach().item()) * max(len(loss_manifold), 1),
+            "vel_sum": float(mean_vel.detach().item()) * max(len(loss_vel), 1),
+            "acc_sum": float(mean_acc.detach().item()) * max(len(loss_acc), 1),
+            "manifold_count": int(len(loss_manifold)),
+            "vel_count": int(len(loss_vel)),
+            "acc_count": int(len(loss_acc)),
+        }
+        return total, metrics
 
     def _train_cv(
         self,
@@ -471,6 +794,7 @@ class CLGTrainer:
                     triu_idx,
                     stats,
                     volume_indices,
+                    epoch,
                 )
                 val_loss = self._evaluate(
                     model,
@@ -478,11 +802,35 @@ class CLGTrainer:
                     triu_idx,
                     stats,
                     volume_indices,
+                    epoch,
                 )
                 if self.is_main:
                     print(
                         f"Fold {fold_idx + 1}/5, epoch {epoch + 1}/{self.max_epochs}, "
                         f"train_loss={train_loss:.4f}, val_loss={val_loss:.4f}"
+                    )
+                    train_m = getattr(self, "_last_epoch_train_metrics", {})
+                    val_m = getattr(self, "_last_epoch_val_metrics", {})
+                    self._append_metrics_row(
+                        {
+                            "fold": fold_idx,
+                            "epoch": epoch + 1,
+                            "train_loss": float(train_loss),
+                            "val_loss": float(val_loss),
+                            "train_manifold": float(train_m.get("manifold", 0.0)),
+                            "train_vel": float(train_m.get("vel", 0.0)),
+                            "train_acc": float(train_m.get("acc", 0.0)),
+                            "val_manifold": float(val_m.get("manifold", 0.0)),
+                            "val_vel": float(val_m.get("vel", 0.0)),
+                            "val_acc": float(val_m.get("acc", 0.0)),
+                            "enable_vel": int(epoch >= self.warmup_manifold_epochs),
+                            "enable_acc": int(epoch >= self.warmup_vel_epochs),
+                            "lambda_manifold": float(self.lambda_manifold),
+                            "lambda_vel": float(self.lambda_vel),
+                            "lambda_acc": float(self.lambda_acc),
+                            "morph_noise_sigma": float(self.morph_noise_sigma),
+                            "sc_pos_edge_drop_prob": float(self.sc_pos_edge_drop_prob),
+                        }
                     )
                 if val_loss < best_fold_val:
                     best_fold_val = val_loss
@@ -540,6 +888,7 @@ class CLGTrainer:
             triu_idx,
             best_stats,
             dataset.volume_metric_indices,
+            epoch=self.max_epochs,
         )
         if self.is_main:
             self.summary["test_loss"] = float(test_loss)

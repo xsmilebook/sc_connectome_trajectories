@@ -1,22 +1,20 @@
 # Plan
 
-Draft a CLG-ODE implementation and execution plan that matches the locked specification, then define the exact steps for submitting a GPU job on the cluster. The plan focuses on model/data deltas, topology conditioning, and a Slurm+Singularity runbook.
+Implement tiered CLG-ODE training so subjects with 1/2/3+ sessions are all usable, persist run-level records for reproducibility, and generate a strict tier availability report (SC+morph file existence) with documentation updates.
 
 ## Scope
-- In: CLG-ODE model/data/training updates, topology conditioning features, SC/morph preprocessing rules, Slurm submission script, and runbook docs.
-- Out: New datasets, container build steps, changes under `data/` or `outputs/`, and unrelated refactors.
+- In: Tiered objective (manifold/velocity/acceleration), default denoising, run directory naming (timestamp+jobid), strict tier stats + docs report, and documentation/progress/session updates.
+- Out: Job submission actions, dataset regeneration, changes under `data/` or committed runtime artifacts under `outputs/`, and unrelated refactors.
 
 ## Action items
-[ ] Compare current CLG-ODE code with `docs/reports/implementation_specification.md` and enumerate required deltas (time definition, covariates, losses, topology usage).
-[ ] Implement SC preprocessing in the data layer: symmetrize, zero diagonal, log1p transform; compute global strength covariates `s` (and optional `s_mean`) from raw weights.
-[ ] Add train-only morphology Z-score normalization at ROI-metric granularity, with optional ICV/TIV adjustment when available.
-[ ] Build topology conditioning features per spec (ECC vector from log1p weights, quantile thresholds, triangle counts) and inject into the ODE dynamics; keep topology out of the training loss.
-[ ] Switch to delta-time integration (age - age0), inject age0/sex/site/strength/topology covariates, and implement multi-start forecasting pair sampling (70% adjacent, 30% random).
-[ ] Replace decoder/loss with edge-existence BCE and positive-edge Huber on log1p weights; disable hard sparsification/topk pruning.
-[ ] Add a Slurm submission script that runs `python -m scripts.train_clg_ode` on `q_ai4` with `--gres=gpu:1`, and reference the Singularity image under `data/external/containers/` via `configs/paths.yaml`.
-[ ] Add validation steps (`python -m pytest`, CUDA availability check in-container) and document expected outputs in `outputs/logs/` and `outputs/results/`.
-[ ] Update `README.md`, `docs/workflow.md`, `PROGRESS.md`, and `docs/sessions/` to reflect the CLG-ODE execution workflow and constraints.
+[x] Extend dataset handling to include subjects with 1 session (`min_length=1`) while still requiring strict SC+morph file existence.
+[x] Implement tiered training objectives: `L_manifold` (Tier 3/2/1), `L_vel` (Tier 2/1), `L_acc` (Tier 1) with a warmup schedule and recommended default weights.
+[x] Enable default denoising augmentation (morph noise + SC positive-edge dropout) and keep `s_mean` enabled by default.
+[x] Add per-run directory naming under `--results_dir/runs/<timestamp>_job<jobid>/` and persist `args.json`, `run_meta.json`, and per-epoch `metrics.csv`.
+[x] Add `python -m scripts.report_clg_ode_tiers` to compute strict tier availability and write a report to `docs/reports/`.
+[x] Update documentation (`README.md`, `docs/workflow.md`, `docs/methods.md`) plus `PROGRESS.md` and `docs/sessions/` to reflect tiered training and run tracking.
+[ ] Run a quick smoke validation in the Singularity container (single GPU and 4-GPU `torchrun`) without submitting jobs from the assistant.
+[ ] Commit the change set with a clear message.
 
 ## Open questions
-- Confirm the exact Singularity image filename to store under `data/external/containers/`.
-- None (s_mean defaults to enabled unless explicitly disabled).
+- None.

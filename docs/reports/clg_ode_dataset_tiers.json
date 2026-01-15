@@ -1,0 +1,20 @@
+{
+  "summary": {
+    "n_subjects": 4566,
+    "subjects_by_sessions": {
+      "1": 1824,
+      "2": 2358,
+      "3": 384
+    },
+    "tier1_subjects": 384,
+    "tier2_subjects": 2358,
+    "tier3_subjects": 1824,
+    "n_sc_sessions": 7692,
+    "n_morph_sessions": 11263,
+    "n_joint_sessions": 7692,
+    "drop_reasons": {
+      "missing_sc_for_morph": 3571
+    }
+  },
+  "index_errors": {}
+}

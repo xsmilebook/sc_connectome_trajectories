@@ -30,7 +30,7 @@ class CLGDataset(Dataset):
         morph_root: str,
         subject_info_csv: str,
         max_nodes: int = 400,
-        min_length: int = 2,
+        min_length: int = 1,
         require_morph: bool = True,
         topo_bins: int = 32,
     ) -> None:
@@ -65,14 +65,18 @@ class CLGDataset(Dataset):
         return [], []
 
     def _build_sequences(self) -> List[Tuple[str, List[str]]]:
-        sequences = list_subject_sequences(self.sc_dir, min_length=self.min_length)
+        sequences = list_subject_sequences(self.sc_dir, min_length=1)
         filtered = []
         for sid, paths in sequences:
-            scanids = [_scanid_from_path(p) for p in paths]
-            if self.require_morph:
-                if not all(scanid in self.morph_index for scanid in scanids):
+            kept = []
+            for p in paths:
+                scanid = _scanid_from_path(p)
+                if self.require_morph and scanid not in self.morph_index:
                     continue
-            filtered.append((sid, paths))
+                kept.append(p)
+            if len(kept) < self.min_length:
+                continue
+            filtered.append((sid, kept))
         return filtered
 
     def __len__(self) -> int:

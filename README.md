@@ -81,6 +81,13 @@ Notes:
 - The trainer uses the `age`, `sex`, and `siteid` columns in `subject_info_sc.csv`, with delta-time integration and `age0` as a covariate.
 - Topology features (ECC) and strength covariates (`s`, `s_mean`) are used for conditioning; topology is not part of the training loss.
 - `s_mean` is enabled by default; disable via `--disable_s_mean` if needed.
+- The default training objective supports subjects with 1/2/3 timepoints (tiered `L_manifold`, `L_vel`, `L_acc`) and writes a per-run directory under `--results_dir/runs/<timestamp>_job<jobid>/` containing `args.json`, `run_meta.json`, and `metrics.csv` for reproducibility.
+
+Dataset tier report (strict SC+morph file existence, writes to `docs/reports/`):
+
+```bash
+python -m scripts.report_clg_ode_tiers
+```
 
 Cluster GPU usage:
 - See `docs/cluster_gpu_usage.md` for the Slurm + Singularity GPU workflow and cluster-specific constraints.

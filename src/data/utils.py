@@ -1,4 +1,5 @@
 import os
+import re
 from typing import List, Tuple, Dict
 
 import numpy as np
@@ -10,6 +11,31 @@ def ensure_dir(path: str) -> None:
         os.makedirs(path, exist_ok=True)
 
 
+def infer_session_id(text: str) -> str:
+    patterns = [
+        ("ses-baselineYear1Arm1", "ses-baselineYear1Arm1"),
+        ("baselineYear1Arm1", "ses-baselineYear1Arm1"),
+        ("BaselineYear1Arm1", "ses-baselineYear1Arm1"),
+        ("baseline", "ses-baselineYear1Arm1"),
+        ("ses-2YearFollowUpYArm1", "ses-2YearFollowUpYArm1"),
+        ("2YearFollowUpYArm1", "ses-2YearFollowUpYArm1"),
+        ("2_year_follow_up_y_arm_1", "ses-2YearFollowUpYArm1"),
+        ("2year", "ses-2YearFollowUpYArm1"),
+        ("ses-4YearFollowUpYArm1", "ses-4YearFollowUpYArm1"),
+        ("4YearFollowUpYArm1", "ses-4YearFollowUpYArm1"),
+        ("4_year_follow_up_y_arm_1", "ses-4YearFollowUpYArm1"),
+        ("4year", "ses-4YearFollowUpYArm1"),
+        ("ses-6YearFollowUpYArm1", "ses-6YearFollowUpYArm1"),
+        ("6YearFollowUpYArm1", "ses-6YearFollowUpYArm1"),
+        ("6_year_follow_up_y_arm_1", "ses-6YearFollowUpYArm1"),
+        ("6year", "ses-6YearFollowUpYArm1"),
+    ]
+    for token, sesid in patterns:
+        if token in text:
+            return sesid
+    return ""
+
+
 def parse_subject_session(filename: str) -> Tuple[str, str]:
     base = os.path.splitext(os.path.basename(filename))[0]
     if "_ses-" in base:
@@ -17,8 +43,16 @@ def parse_subject_session(filename: str) -> Tuple[str, str]:
         subject_id = parts[0]
         session_id = "ses-" + parts[1]
     else:
-        subject_id = base
-        session_id = ""
+        subject_id = base.split("_", 1)[0]
+        if not subject_id:
+            subject_id = base
+        if subject_id.startswith("sub-") is False:
+            m = re.search(r"(sub-[A-Za-z0-9]+)", base)
+            if m:
+                subject_id = m.group(1)
+            elif re.fullmatch(r"NDARINV[A-Za-z0-9]+", subject_id):
+                subject_id = "sub-" + subject_id
+        session_id = infer_session_id(base)
     return subject_id, session_id
 
 
@@ -27,6 +61,7 @@ def session_sort_key(session_id: str) -> Tuple[int, str]:
         "ses-baselineYear1Arm1": 0,
         "ses-2YearFollowUpYArm1": 1,
         "ses-4YearFollowUpYArm1": 2,
+        "ses-6YearFollowUpYArm1": 3,
     }
     if session_id in priority:
         return priority[session_id], session_id

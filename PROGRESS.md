@@ -2,7 +2,7 @@
 
 
 ## Current focus
-- 2026-01-15: Enable multi-GPU CLG-ODE training and update submission time limit.
+- 2026-01-15: Enable tiered CLG-ODE training (1/2/3 timepoints) with run-level logging and dataset tier reporting.
 
 ## Completed
 - 2026-01-12: Drafted the repo-structure refactor plan in `PLAN.md`.
@@ -29,6 +29,9 @@
 - 2026-01-15: Moved `set -euo pipefail` below `#SBATCH` lines to keep log directives effective.
 - 2026-01-15: Fixed `scripts.render_paths` usage to include all required path keys in one invocation.
 - 2026-01-15: Added distributed training support (DDP) and updated the submission script to request 4 GPUs with a 48h limit.
+- 2026-01-15: Enabled tiered training objectives for CLG-ODE so 1/2/3 timepoint subjects are all used (manifold/velocity/acceleration losses with warmup).
+- 2026-01-15: Added per-run directory naming (`<timestamp>_job<jobid>`) and persisted `args.json`, `run_meta.json`, and `metrics.csv` for experiment tracking.
+- 2026-01-15: Added a strict tier statistics script and generated an up-to-date dataset tier report under `docs/reports/`.
 
 ## In progress
 

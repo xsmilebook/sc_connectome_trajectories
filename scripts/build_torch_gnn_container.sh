@@ -3,7 +3,7 @@ set -euo pipefail
 
 module load singularity
 
-eval "$(python -m scripts.render_paths \
+eval "$(python3 -m scripts.render_paths \
   --set CONTAINER=local.containers.torch_gnn \
   --resolve)"
 

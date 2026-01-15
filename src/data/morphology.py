@@ -17,6 +17,9 @@ SES_PATTERNS: List[Tuple[str, str]] = [
     ("4YearFollowUpYArm1", "ses-4YearFollowUpYArm1"),
     ("4_year_follow_up_y_arm_1", "ses-4YearFollowUpYArm1"),
     ("4year", "ses-4YearFollowUpYArm1"),
+    ("6YearFollowUpYArm1", "ses-6YearFollowUpYArm1"),
+    ("6_year_follow_up_y_arm_1", "ses-6YearFollowUpYArm1"),
+    ("6year", "ses-6YearFollowUpYArm1"),
 ]
 
 DEFAULT_METRICS = ["Thickness", "Area", "Curv", "GWC"]

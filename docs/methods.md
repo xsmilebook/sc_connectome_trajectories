@@ -4,7 +4,7 @@
 
 ## 输入与对齐假设
 
-- 基本输入为 SC 时间序列（每个被试至少 2 个时间点），文件组织与排序见 `docs/workflow.md`。
+- 基本输入为 SC 时间序列（每个被试至少 **1** 个时间点），文件组织与排序见 `docs/workflow.md`。
 - 若使用 CLG-ODE，需要额外的形态学输入与对齐表 `subject_info_sc.csv`。
 - 对齐优先以显式键（如 `scanid/subid/sesid`）完成，不依赖“行序一致”。
 
@@ -29,6 +29,7 @@
 - 将协变量（`age0/sex/siteid` + SC 全局强度标量 `s`（原始权重域计算）+ 可选正边平均强度 `s_mean` + 拓扑摘要向量 `μ(A)`）编码后，与时间 `t` 一同作为 ODE 右端项的输入，得到耦合潜空间动力学。
 - 解码得到形态学预测 `x_hat` 与连接预测 `a_hat`；连接使用连续权重回归（`Softplus(z z^T)`），不做额外 hard sparsify（禁用 Top‑K/阈值截断）。
 - 训练采样采用多起点预测：70% 选择相邻访视对，30% 从所有 `i<j` 组合中均匀采样。
+- 默认启用轻量去噪增强（train-only）：形态学加入高斯噪声（`morph_noise_sigma=0.05`），SC 对正边做少量 dropout（`sc_pos_edge_drop_prob=0.02`），目标仍为重建“干净”输入。
 
 损失项（见 `src/engine/clg_trainer.py`）：
 
@@ -38,6 +39,11 @@
   - 连接输出共享同一个内积分数 `s_ij=z_i^T z_j`，存在性与强度分别通过可学习标定得到：`p_ij=σ(α(s_ij-δ))`，`ŵ_ij=softplus(γ s_ij+β)`（默认初始化 `α=10, δ=0, γ=1, β=0`）。
 - KL 正则：对潜变量分布的 KL divergence（权重 `lambda_kl`）。
 - 拓扑：仅作为条件输入与评估解释项，不参与训练 loss（阈值分位数的 Euler characteristic curve，见 `docs/reports/implementation_specification.md`）。
+- Tiered 训练目标（按每个被试可用时间点数自动触发）：
+  - `L_manifold`：Tier 3/2/1 均可用（重建 + 多起点预测重建 + 去噪重建）。
+  - `L_vel`：Tier 2/1 使用（潜空间速度场一致性/监督）。
+  - `L_acc`：Tier 1 使用（潜空间加速度/非线性项）。
+  - 默认权重与 warmup：`λ_manifold=1.0`，`λ_vel=0.1`，`λ_acc=0.05`；前 5 个 epoch 仅优化 `L_manifold`，第 6–10 个 epoch 启用 `L_vel`，第 11 个 epoch 起启用 `L_acc`。
 
 ## 训练与评估口径
 
@@ -52,3 +58,4 @@
 
 - 以验证集损失为准进行早停（`patience`）。
 - 输出建议写入 `outputs/results/<model_name>/`，包含 `.pt` 权重与 JSON 摘要。
+- CLG-ODE 默认在 `--results_dir/runs/<timestamp>_job<jobid>/` 创建独立运行目录，保存 `args.json`、`run_meta.json`、`metrics.csv`，便于追溯与横向对比。

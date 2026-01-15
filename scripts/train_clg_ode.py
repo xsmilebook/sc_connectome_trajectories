@@ -1,5 +1,8 @@
 import os
 import argparse
+import json
+import subprocess
+from datetime import datetime
 
 import torch
 import torch.distributed as dist
@@ -18,6 +21,19 @@ def init_distributed() -> tuple[int, int, int]:
             torch.cuda.set_device(local_rank)
         dist.init_process_group(backend=backend, init_method="env://")
     return rank, world_size, local_rank
+
+
+def _git_info(repo_root: str) -> dict:
+    def _run(args: list[str]) -> str:
+        try:
+            out = subprocess.check_output(args, cwd=repo_root, stderr=subprocess.DEVNULL)
+            return out.decode("utf-8").strip()
+        except Exception:
+            return ""
+
+    sha = _run(["git", "rev-parse", "HEAD"])
+    dirty = bool(_run(["git", "status", "--porcelain"]))
+    return {"sha": sha, "dirty": dirty}
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -53,8 +69,21 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--random_state", type=int, default=42)
     parser.add_argument("--lambda_kl", type=float, default=0.0)
     parser.add_argument("--lambda_weight", type=float, default=1.0)
+    parser.add_argument("--lambda_manifold", type=float, default=1.0)
+    parser.add_argument("--lambda_vel", type=float, default=0.1)
+    parser.add_argument("--lambda_acc", type=float, default=0.05)
+    parser.add_argument("--warmup_manifold_epochs", type=int, default=5)
+    parser.add_argument("--warmup_vel_epochs", type=int, default=10)
+    parser.add_argument("--morph_noise_sigma", type=float, default=0.05)
+    parser.add_argument("--sc_pos_edge_drop_prob", type=float, default=0.02)
     parser.add_argument("--topo_bins", type=int, default=32)
     parser.add_argument("--adjacent_pair_prob", type=float, default=0.7)
+    parser.add_argument(
+        "--run_name",
+        type=str,
+        default="",
+        help="Optional run directory name under results_dir/runs (default: <timestamp>_job<id>).",
+    )
     parser.add_argument(
         "--disable_s_mean",
         action="store_true",
@@ -69,6 +98,35 @@ def main() -> None:
     parser = build_arg_parser()
     args = parser.parse_args()
     rank, world_size, local_rank = init_distributed()
+    base_results_dir = args.results_dir
+    job_id = os.environ.get("SLURM_JOB_ID") or os.environ.get("SLURM_JOBID") or "local"
+    run_name = args.run_name.strip()
+    if not run_name and rank == 0:
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        run_name = f"{ts}_job{job_id}"
+    if world_size > 1:
+        obj = [run_name]
+        dist.broadcast_object_list(obj, src=0)
+        run_name = obj[0]
+    run_dir = os.path.join(base_results_dir, "runs", run_name)
+    os.makedirs(run_dir, exist_ok=True)
+    args.results_dir = run_dir
+    if rank == 0:
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        meta = {
+            "run_name": run_name,
+            "run_dir": run_dir,
+            "base_results_dir": base_results_dir,
+            "job_id": job_id,
+            "world_size": world_size,
+            "created_at": datetime.now().isoformat(timespec="seconds"),
+            "git": _git_info(project_root),
+            "argv": os.sys.argv,
+        }
+        with open(os.path.join(run_dir, "run_meta.json"), "w", encoding="utf-8") as f:
+            json.dump(meta, f, indent=2)
+        with open(os.path.join(run_dir, "args.json"), "w", encoding="utf-8") as f:
+            json.dump(vars(args), f, indent=2)
     trainer = CLGTrainer(
         sc_dir=args.sc_dir,
         morph_root=args.morph_root,
@@ -83,6 +141,13 @@ def main() -> None:
         random_state=args.random_state,
         lambda_kl=args.lambda_kl,
         lambda_weight=args.lambda_weight,
+        lambda_manifold=args.lambda_manifold,
+        lambda_vel=args.lambda_vel,
+        lambda_acc=args.lambda_acc,
+        warmup_manifold_epochs=args.warmup_manifold_epochs,
+        warmup_vel_epochs=args.warmup_vel_epochs,
+        morph_noise_sigma=args.morph_noise_sigma,
+        sc_pos_edge_drop_prob=args.sc_pos_edge_drop_prob,
         use_s_mean=not args.disable_s_mean,
         topo_bins=args.topo_bins,
         adjacent_pair_prob=args.adjacent_pair_prob,

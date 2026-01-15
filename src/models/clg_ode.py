@@ -149,11 +149,16 @@ class CLGODE(nn.Module):
         sex: torch.Tensor,
         site: torch.Tensor,
         covariates: torch.Tensor,
+        use_mu: bool = False,
     ) -> CLGOutput:
         mu_morph, logvar_morph = self.morph_encoder(x0, a0)
         mu_conn, logvar_conn = self.conn_encoder(x0, a0)
-        z_morph0 = reparameterize(mu_morph, logvar_morph, self.training)
-        z_conn0 = reparameterize(mu_conn, logvar_conn, self.training)
+        if use_mu:
+            z_morph0 = mu_morph
+            z_conn0 = mu_conn
+        else:
+            z_morph0 = reparameterize(mu_morph, logvar_morph, self.training)
+            z_conn0 = reparameterize(mu_conn, logvar_conn, self.training)
         z0 = torch.cat([z_morph0, z_conn0], dim=-1)
         cov = self.cov_encoder(sex, site, covariates)
         zt = integrate_latent(self.ode_func, z0, times, cov, self.solver_steps)
