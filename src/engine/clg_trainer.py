@@ -389,7 +389,21 @@ class CLGTrainer:
         mae = torch.mean(torch.abs(diff)).item()
         corr = self._pearsonr_torch(pred_vec, true_vec)
 
-        pred_np = pred_log.detach().cpu().numpy()
+        true_vec = true_raw[triu_idx[0], triu_idx[1]]
+        pos_count = int((true_vec > 0).sum().item())
+        if pos_count > 0:
+            topk = torch.topk(pred_vec, k=pos_count, largest=True)
+            mask = torch.zeros_like(pred_vec, dtype=torch.bool)
+            mask[topk.indices] = True
+            pred_sparse = torch.zeros_like(pred_weight)
+            triu0, triu1 = triu_idx
+            pred_sparse[triu0, triu1] = torch.where(mask, pred_vec, torch.zeros_like(pred_vec))
+            pred_sparse = pred_sparse + pred_sparse.transpose(-1, -2)
+        else:
+            pred_sparse = torch.zeros_like(pred_weight)
+        pred_sparse = pred_sparse - torch.diag_embed(torch.diagonal(pred_sparse, dim1=-2, dim2=-1))
+
+        pred_np = torch.log1p(pred_sparse).detach().cpu().numpy()
         true_np = true_log.detach().cpu().numpy()
         ecc_pred = compute_ecc(pred_np, k=self.topo_bins)
         ecc_true = compute_ecc(true_np, k=self.topo_bins)
@@ -603,6 +617,7 @@ class CLGTrainer:
         loss_manifold = []
         loss_vel = []
         loss_acc = []
+        loss_kl = []
 
         for b, length in enumerate(lengths):
             if length >= 3:
@@ -643,6 +658,9 @@ class CLGTrainer:
                 cov,
                 use_mu=True,
             )
+            kl = kl_divergence(outputs_i.mu_morph, outputs_i.logvar_morph)
+            kl = kl + kl_divergence(outputs_i.mu_conn, outputs_i.logvar_conn)
+            loss_kl.append(kl)
             outputs_denoise = model(
                 a_i_log_noisy.unsqueeze(0),
                 x_i_noisy.unsqueeze(0),
@@ -792,12 +810,15 @@ class CLGTrainer:
         mean_manifold = torch.stack(loss_manifold).mean() if loss_manifold else torch.tensor(0.0, device=self.device)
         mean_vel = torch.stack(loss_vel).mean() if loss_vel else torch.tensor(0.0, device=self.device)
         mean_acc = torch.stack(loss_acc).mean() if loss_acc else torch.tensor(0.0, device=self.device)
+        mean_kl = torch.stack(loss_kl).mean() if loss_kl else torch.tensor(0.0, device=self.device)
 
         total = self.lambda_manifold * mean_manifold
         if enable_vel:
             total = total + self.lambda_vel * mean_vel
         if enable_acc:
             total = total + self.lambda_acc * mean_acc
+        if self.lambda_kl > 0:
+            total = total + self.lambda_kl * mean_kl
         metrics = {
             "manifold_sum": float(mean_manifold.detach().item()) * max(len(loss_manifold), 1),
             "vel_sum": float(mean_vel.detach().item()) * max(len(loss_vel), 1),
@@ -842,7 +863,7 @@ class CLGTrainer:
 
                 for b, length in enumerate(lengths):
                     if length >= 2:
-                        i, j = self._sample_pair(length)
+                        i, j = 0, 1
                     else:
                         i, j = 0, None
 
