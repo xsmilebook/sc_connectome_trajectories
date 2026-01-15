@@ -2,7 +2,7 @@
 
 
 ## Current focus
-- 2026-01-15: Isolate CLG-ODE logs per folder and avoid torchrun port collisions.
+- 2026-01-15: Keep fold outputs under a shared time_job run directory.
 
 ## Completed
 - 2026-01-12: Drafted the repo-structure refactor plan in `PLAN.md`.
@@ -37,6 +37,7 @@
 - 2026-01-15: Added `--cv_fold` support for per-fold CLG-ODE training as a single-GPU fallback.
 - 2026-01-15: Updated submission script to default to single-GPU and support fold-wise Slurm array execution.
 - 2026-01-15: Moved CLG-ODE logs into `outputs/logs/clg_ode/` and auto-select `master_port`.
+- 2026-01-15: Grouped per-fold outputs under a shared `runs/<time>_job<array_job_id>/fold{0..4}` root.
 
 ## In progress
 

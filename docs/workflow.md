@@ -170,6 +170,8 @@ sbatch scripts/submit_clg_ode.sh
 sbatch --array=0-4 scripts/submit_clg_ode.sh
 ```
 
+结果将写入统一的运行根目录（`runs/<time>_job<array_job_id>/fold{0..4}/`）。
+
 训练脚本会在 `--results_dir` 下保存：
 
 - 最优 fold 的模型权重（`.pt`）

@@ -44,6 +44,20 @@ if [[ -n "${FOLD_ID}" ]]; then
   FOLD_ARGS=(--cv_fold "${FOLD_ID}")
 fi
 JOB_ID="${SLURM_JOB_ID:-0}"
+ARRAY_JOB_ID="${SLURM_ARRAY_JOB_ID:-$JOB_ID}"
+START_TS="${SLURM_JOB_START_TIME:-}"
+if [[ -n "${START_TS}" ]]; then
+  TS="$(date -d "@${START_TS}" +%Y%m%d_%H%M%S 2>/dev/null || date +%Y%m%d_%H%M%S)"
+else
+  TS="$(date +%Y%m%d_%H%M%S)"
+fi
+RUN_BASE="${RUN_BASE:-clg_ode_${TS}_job${ARRAY_JOB_ID}}"
+if [[ -n "${FOLD_ID}" ]]; then
+  RUN_NAME="${RUN_BASE}/fold${FOLD_ID}"
+else
+  RUN_NAME="${RUN_BASE}"
+fi
+
 BASE_PORT=$((10000 + (JOB_ID % 50000)))
 if [[ -n "${FOLD_ID}" ]]; then
   MASTER_PORT=$((BASE_PORT + FOLD_ID))
@@ -70,5 +84,5 @@ singularity exec --nv \
     --morph_root "$MORPH_ROOT" \
     --subject_info_csv "$SUBJECT_INFO" \
     --results_dir "$RESULTS_DIR" \
-    --run_name "clg_ode${RUN_SUFFIX}" \
+    --run_name "$RUN_NAME" \
     "${FOLD_ARGS[@]}"
