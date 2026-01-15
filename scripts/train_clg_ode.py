@@ -84,6 +84,13 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default="",
         help="Optional run directory name under results_dir/runs (default: <timestamp>_job<id>).",
     )
+    parser.add_argument("--cv_folds", type=int, default=5)
+    parser.add_argument(
+        "--cv_fold",
+        type=int,
+        default=-1,
+        help="Train a single CV fold (0-based). Use -1 to run all folds.",
+    )
     parser.add_argument(
         "--disable_s_mean",
         action="store_true",
@@ -152,6 +159,8 @@ def main() -> None:
         topo_bins=args.topo_bins,
         adjacent_pair_prob=args.adjacent_pair_prob,
         solver_steps=args.solver_steps,
+        cv_folds=args.cv_folds,
+        cv_fold=None if args.cv_fold < 0 else args.cv_fold,
         rank=rank,
         world_size=world_size,
         local_rank=local_rank,

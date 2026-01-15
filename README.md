@@ -83,6 +83,7 @@ Notes:
 - `s_mean` is enabled by default; disable via `--disable_s_mean` if needed.
 - The default training objective supports subjects with 1/2/3 timepoints (tiered `L_manifold`, `L_vel`, `L_acc`) and writes a per-run directory under `--results_dir/runs/<timestamp>_job<jobid>/` containing `args.json`, `run_meta.json`, and `metrics.csv` for reproducibility.
 - Test-time SC evaluation metrics are written to `test_sc_metrics.json` in the run directory (log-domain MSE/MAE/pearson + ECC similarity with top-k sparsification; deterministic t0→t1 pairing).
+- If multi-GPU DDP is unstable, run folds separately with `--cv_fold <0-4>` and submit as a Slurm array of single-GPU jobs.
 
 Dataset tier report (strict SC+morph file existence, writes to `docs/reports/`):
 

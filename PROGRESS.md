@@ -2,7 +2,7 @@
 
 
 ## Current focus
-- 2026-01-15: Make CLG-ODE test metrics deterministic and align ECC with sparsity via top-k masking.
+- 2026-01-15: Add per-fold training support to enable single-GPU CV runs when DDP is unstable.
 
 ## Completed
 - 2026-01-12: Drafted the repo-structure refactor plan in `PLAN.md`.
@@ -34,6 +34,7 @@
 - 2026-01-15: Added a strict tier statistics script and generated an up-to-date dataset tier report under `docs/reports/`.
 - 2026-01-15: Added test-only SC evaluation metrics (log-domain MSE/MAE/pearson + ECC similarity) and saved them as `test_sc_metrics.json`.
 - 2026-01-15: Made test metrics deterministic (`t0→t1`) and aligned ECC with sparsity via top-k masking.
+- 2026-01-15: Added `--cv_fold` support for per-fold CLG-ODE training as a single-GPU fallback.
 
 ## In progress
 

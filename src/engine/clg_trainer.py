@@ -60,6 +60,8 @@ class CLGTrainer:
         warmup_vel_epochs: int = 10,
         morph_noise_sigma: float = 0.05,
         sc_pos_edge_drop_prob: float = 0.02,
+        cv_folds: int = 5,
+        cv_fold: int | None = None,
         rank: int = 0,
         world_size: int = 1,
         local_rank: int = 0,
@@ -89,6 +91,8 @@ class CLGTrainer:
         self.warmup_vel_epochs = warmup_vel_epochs
         self.morph_noise_sigma = morph_noise_sigma
         self.sc_pos_edge_drop_prob = sc_pos_edge_drop_prob
+        self.cv_folds = cv_folds
+        self.cv_fold = cv_fold
         self.rank = rank
         self.world_size = world_size
         self.local_rank = local_rank
@@ -931,7 +935,12 @@ class CLGTrainer:
     ) -> Tuple[str, NormStats]:
         groups = np.array([subjects[i] for i in trainval_indices])
         indices = np.array(trainval_indices)
-        gkf = GroupKFold(n_splits=5)
+        n_splits = self.cv_folds
+        if n_splits < 2:
+            raise ValueError("cv_folds must be >= 2")
+        if self.cv_fold is not None and not (0 <= self.cv_fold < n_splits):
+            raise ValueError(f"cv_fold must be in [0, {n_splits - 1}]")
+        gkf = GroupKFold(n_splits=n_splits)
         triu_idx = compute_triu_indices(dataset.max_nodes)
         best_val = math.inf
         best_model_path = ""
@@ -939,6 +948,8 @@ class CLGTrainer:
         fold_results = []
         volume_indices = dataset.volume_metric_indices
         for fold_idx, (train_idx_rel, val_idx_rel) in enumerate(gkf.split(indices, groups=groups)):
+            if self.cv_fold is not None and fold_idx != self.cv_fold:
+                continue
             train_idx = indices[train_idx_rel].tolist()
             val_idx = indices[val_idx_rel].tolist()
             stats = self._compute_norm_stats(dataset, train_idx)
@@ -957,7 +968,7 @@ class CLGTrainer:
             epochs_no_improve = 0
             if self.is_main:
                 print(
-                    f"Starting fold {fold_idx + 1}/5 with {len(train_idx)} train subjects and {len(val_idx)} val subjects"
+                    f"Starting fold {fold_idx + 1}/{n_splits} with {len(train_idx)} train subjects and {len(val_idx)} val subjects"
                 )
             for epoch in range(self.max_epochs):
                 if (
@@ -985,7 +996,7 @@ class CLGTrainer:
                 )
                 if self.is_main:
                     print(
-                        f"Fold {fold_idx + 1}/5, epoch {epoch + 1}/{self.max_epochs}, "
+                        f"Fold {fold_idx + 1}/{n_splits}, epoch {epoch + 1}/{self.max_epochs}, "
                         f"train_loss={train_loss:.4f}, val_loss={val_loss:.4f}"
                     )
                     train_m = getattr(self, "_last_epoch_train_metrics", {})
@@ -1023,7 +1034,7 @@ class CLGTrainer:
                 if epochs_no_improve >= self.patience:
                     if self.is_main:
                         print(
-                            f"Fold {fold_idx + 1}/5 early stopped at epoch {epoch + 1} "
+                            f"Fold {fold_idx + 1}/{n_splits} early stopped at epoch {epoch + 1} "
                             f"with best_val_loss={best_fold_val:.4f}"
                         )
                     break
@@ -1040,6 +1051,8 @@ class CLGTrainer:
                 best_stats = stats
         if self.is_main:
             self.summary["cv_folds"] = fold_results
+            self.summary["cv_fold"] = self.cv_fold
+            self.summary["cv_folds_total"] = n_splits
             self.summary["best_val_loss"] = float(best_val)
             self.summary["best_model_path"] = best_model_path
         if best_stats is None:

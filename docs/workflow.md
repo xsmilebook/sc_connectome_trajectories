@@ -136,6 +136,16 @@ python -m scripts.train_clg_ode \
 - 测试评估当前仅覆盖 SC；单时间点被试使用重建输出评估，多时间点被试使用 `i→j` 预测输出评估。
 - 测试评估采用固定的 `t0→t1` 对（避免随机性），ECC 评估时对预测矩阵做 top-k 稀疏化（k 为真实正边数）。
 
+按 fold 拆分提交（单卡替代多卡）：
+
+- 使用 `--cv_fold` 仅训练单个 fold（0-based），例如：
+
+```bash
+python -m scripts.train_clg_ode --cv_fold 0
+```
+
+- 可用 Slurm array 提交 5 个独立任务（每个任务 1 张卡），避免 DDP 复杂性。
+
 可选参数示例：
 
 ```bash
