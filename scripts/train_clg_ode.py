@@ -63,17 +63,17 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--latent_dim", type=int, default=64)
     parser.add_argument("--hidden_dim", type=int, default=128)
     parser.add_argument("--batch_size", type=int, default=2)
-    parser.add_argument("--max_epochs", type=int, default=80)
-    parser.add_argument("--patience", type=int, default=10)
-    parser.add_argument("--learning_rate", type=float, default=1e-4)
+    parser.add_argument("--max_epochs", type=int, default=120)
+    parser.add_argument("--patience", type=int, default=20)
+    parser.add_argument("--learning_rate", type=float, default=5e-5)
     parser.add_argument("--random_state", type=int, default=42)
-    parser.add_argument("--lambda_kl", type=float, default=0.0)
+    parser.add_argument("--lambda_kl", type=float, default=1e-4)
     parser.add_argument("--lambda_weight", type=float, default=1.0)
     parser.add_argument("--lambda_manifold", type=float, default=1.0)
-    parser.add_argument("--lambda_vel", type=float, default=0.1)
-    parser.add_argument("--lambda_acc", type=float, default=0.05)
-    parser.add_argument("--warmup_manifold_epochs", type=int, default=5)
-    parser.add_argument("--warmup_vel_epochs", type=int, default=10)
+    parser.add_argument("--lambda_vel", type=float, default=0.2)
+    parser.add_argument("--lambda_acc", type=float, default=0.1)
+    parser.add_argument("--warmup_manifold_epochs", type=int, default=10)
+    parser.add_argument("--warmup_vel_epochs", type=int, default=20)
     parser.add_argument("--morph_noise_sigma", type=float, default=0.05)
     parser.add_argument("--sc_pos_edge_drop_prob", type=float, default=0.02)
     parser.add_argument("--topo_bins", type=int, default=32)
@@ -96,7 +96,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Disable the default s_mean strength covariate.",
     )
-    parser.add_argument("--solver_steps", type=int, default=8)
+    parser.add_argument("--solver_steps", type=int, default=12)
     return parser
 
 

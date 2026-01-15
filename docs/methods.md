@@ -43,7 +43,7 @@
   - `L_manifold`：Tier 3/2/1 均可用（重建 + 多起点预测重建 + 去噪重建）。
   - `L_vel`：Tier 2/1 使用（潜空间速度场一致性/监督）。
   - `L_acc`：Tier 1 使用（潜空间加速度/非线性项）。
-  - 默认权重与 warmup：`λ_manifold=1.0`，`λ_vel=0.1`，`λ_acc=0.05`；前 5 个 epoch 仅优化 `L_manifold`，第 6–10 个 epoch 启用 `L_vel`，第 11 个 epoch 起启用 `L_acc`。
+  - 默认权重与 warmup：`λ_manifold=1.0`，`λ_vel=0.2`，`λ_acc=0.1`；前 10 个 epoch 仅优化 `L_manifold`，第 11–20 个 epoch 启用 `L_vel`，第 21 个 epoch 起启用 `L_acc`。
 
 ## 训练与评估口径
 
