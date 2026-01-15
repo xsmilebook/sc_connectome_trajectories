@@ -18,10 +18,10 @@ fi
 
 render_paths_output="$(python3 -m scripts.render_paths \
   --set CONTAINER=local.containers.torch_gnn \
-  --set SC_DIR=local.data.sc_connectome_schaefer400 \
-  --set MORPH_ROOT=local.data.morphology \
-  --set SUBJECT_INFO=local.data.subject_info_sc \
-  --set RESULTS_DIR=local.outputs.clg_ode \
+        SC_DIR=local.data.sc_connectome_schaefer400 \
+        MORPH_ROOT=local.data.morphology \
+        SUBJECT_INFO=local.data.subject_info_sc \
+        RESULTS_DIR=local.outputs.clg_ode \
   --resolve)" || {
   echo "Failed to resolve paths via scripts.render_paths; check Python environment." >&2
   exit 1
