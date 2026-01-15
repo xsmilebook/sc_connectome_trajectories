@@ -90,3 +90,9 @@ CLG-ODE submission helper (uses paths from `configs/paths.yaml` and a Singularit
 ```bash
 sbatch scripts/submit_clg_ode.sh
 ```
+
+Container build (torch+CUDA+GNN, remote Singularity build):
+
+```bash
+bash scripts/build_torch_gnn_container.sh
+```

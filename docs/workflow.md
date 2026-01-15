@@ -150,6 +150,14 @@ sbatch scripts/submit_clg_ode.sh
 - 使用 Singularity 容器 `singularity exec --nv`，避免在计算节点动态安装/编译依赖。
 - Slurm 日志建议写入 `outputs/logs/`，训练结果写入 `outputs/results/`（与本仓库结构一致）。
 
+### 容器构建（torch+CUDA+GNN）
+
+推荐使用 `scripts/containers/torch_gnn.def` 通过远程构建生成 `.sif`，容器路径由 `configs/paths.yaml` 的 `local.containers.torch_gnn` 控制（默认 `data/external/containers/torch_gnn.sif`）。
+
+```bash
+bash scripts/build_torch_gnn_container.sh
+```
+
 ## 更新说明
 
 当目录约定或关键输入输出路径变更时，请在 `docs/sessions/` 记录变更内容、原因与影响范围。

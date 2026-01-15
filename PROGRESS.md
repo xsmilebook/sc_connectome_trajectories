@@ -2,7 +2,7 @@
 
 
 ## Current focus
-- 2026-01-14: Implement CLG-ODE specification (delta time, topology conditioning, losses, submission workflow).
+- 2026-01-14: Add the torch+CUDA+GNN Singularity container definition and build workflow.
 
 ## Completed
 - 2026-01-12: Drafted the repo-structure refactor plan in `PLAN.md`.
@@ -22,6 +22,7 @@
 - 2026-01-14: Linked cluster GPU usage guide across docs and agent rules.
 - 2026-01-14: Replaced `PLAN.md` with the CLG-ODE implementation and execution plan.
 - 2026-01-14: Implemented CLG-ODE spec updates (SC preprocessing, topology conditioning, delta-time sampling), added submission script, and refreshed docs/tests.
+- 2026-01-14: Added the Singularity definition/build script and documented the container workflow.
 
 ## In progress
 

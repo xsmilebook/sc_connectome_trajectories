@@ -117,6 +117,8 @@ torch_gnn.sif
 Slurm + singularity exec --nv
 ```
 
+本仓库提供 `scripts/containers/torch_gnn.def` 与 `scripts/build_torch_gnn_container.sh` 作为可复用模板，默认输出位置为 `data/external/containers/torch_gnn.sif`（路径由 `configs/paths.yaml` 管理）。
+
 ---
 
 ## 6. AI Agent 的标准运行模板（GPU 作业）
@@ -213,4 +215,3 @@ print(torch.cuda.get_device_name(0))
 > **在该集群上，GPU 深度学习必须通过：
 > Slurm 申请 GPU → Singularity 容器 → 官方预编译 PyTorch / GNN 环境；
 > 不允许在计算节点动态修改深度学习环境。**
-
