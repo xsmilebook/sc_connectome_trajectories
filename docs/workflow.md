@@ -135,6 +135,7 @@ python -m scripts.train_clg_ode \
 - 支持 1/2/3 个时间点的被试共同训练（Tier 3/2/1）；对应 `L_manifold/L_vel/L_acc` 的启用与 warmup 见 `docs/methods.md`。
 - 测试评估当前仅覆盖 SC；单时间点被试使用重建输出评估，多时间点被试使用 `i→j` 预测输出评估。
 - 测试评估采用固定的 `t0→t1` 对（避免随机性），ECC 评估时对预测矩阵做 top-k 稀疏化（k 为真实正边数）。
+- 拓扑损失（Betti curve）为实验性增强项，默认启用；细节见 `docs/methods.md`。
 
 按 fold 拆分提交（单卡替代多卡）：
 

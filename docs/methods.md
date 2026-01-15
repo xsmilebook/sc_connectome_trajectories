@@ -38,12 +38,37 @@
   - 连接：为避免零边主导，使用两项式损失：存在性加权 BCE（pos:neg=5:1）+ 正边权重的 log 域 Huber；`L = L_edge + λ_w * L_weight`（默认 `λ_w=1.0`；上三角计算避免冗余）。
   - 连接输出共享同一个内积分数 `s_ij=z_i^T z_j`，存在性与强度分别通过可学习标定得到：`p_ij=σ(α(s_ij-δ))`，`ŵ_ij=softplus(γ s_ij+β)`（默认初始化 `α=10, δ=0, γ=1, β=0`）。
 - KL 正则：对潜变量分布的 KL divergence（权重 `lambda_kl`）。
-- 拓扑：仅作为条件输入与评估解释项，不参与训练 loss（阈值分位数的 Euler characteristic curve，见 `docs/reports/implementation_specification.md`）。
+- 拓扑（实验性增强，**本实现已偏离锁定规范**）：在原“拓扑仅作 conditioning/评估”的基础上，增加 Betti curve 的拓扑一致性损失，用于突出连通分量与环结构的可解释性（见下节）。
 - Tiered 训练目标（按每个被试可用时间点数自动触发）：
   - `L_manifold`：Tier 3/2/1 均可用（重建 + 多起点预测重建 + 去噪重建）。
   - `L_vel`：Tier 2/1 使用（潜空间速度场一致性/监督）。
   - `L_acc`：Tier 1 使用（潜空间加速度/非线性项）。
   - 默认权重与 warmup：`λ_manifold=1.0`，`λ_vel=0.2`，`λ_acc=0.1`；前 10 个 epoch 仅优化 `L_manifold`，第 11–20 个 epoch 启用 `L_vel`，第 21 个 epoch 起启用 `L_acc`。
+
+### 拓扑损失：Betti curve（β0/β1）
+
+目标：在每个预测目标时刻的 SC 上，引入对拓扑结构的显式约束，重点覆盖：
+- **连通分量数**（connected components, β0）
+- **环结构数**（cycles, β1）
+
+定义（基于图的 1-skeleton，不引入 clique complex 的高阶填充）：
+- 对每个阈值 `τ`，构造无向图 `G(τ)`，边集合为 `A_log >= τ`，其中 `A_log = log(1 + A)`。
+- 令 `V=N` 为节点数，`E(τ)` 为上三角边数，`C(τ)` 为连通分量数，则
+  - `β0(τ) = C(τ)`
+  - `β1(τ) = E(τ) - V + C(τ)`
+
+阈值序列：
+- 仅在真实 SC 的正边集合上取 `K` 个分位数阈值（默认 `K=8`，分位范围 `0.05–0.95`）。
+
+可微近似（训练用）：
+- 对预测矩阵使用 soft threshold：`W_pred(τ) = sigmoid(κ (Â_log - τ))`（`κ` 为 sharpness）。
+- 连通分量 `β0` 使用热核迹的 Hutchinson 估计近似（归一化拉普拉斯 `L_sym` 的 heat kernel）：
+  - `β0(τ) ≈ tr(exp(-t L_sym(τ)))`
+- `β1` 用 `β1(τ) = E(τ) - V + β0(τ)`，其中 `E(τ)` 为 soft edge sum（上三角求和）。
+
+损失形式（默认启用）：
+- `L_topo = mean_τ[ Huber(β0_pred(τ) - β0_true(τ)) + Huber(β1_pred(τ) - β1_true(τ)) ]`
+- 总损失加权：`L += λ_topo * L_topo`（默认 `λ_topo=0.1`）。
 
 ## 训练与评估口径
 

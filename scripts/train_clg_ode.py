@@ -76,6 +76,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--warmup_vel_epochs", type=int, default=20)
     parser.add_argument("--morph_noise_sigma", type=float, default=0.05)
     parser.add_argument("--sc_pos_edge_drop_prob", type=float, default=0.02)
+    parser.add_argument("--lambda_topo", type=float, default=0.1)
+    parser.add_argument("--topo_loss_bins", type=int, default=8)
+    parser.add_argument("--betti_sharpness", type=float, default=20.0)
+    parser.add_argument("--betti_t", type=float, default=10.0)
+    parser.add_argument("--betti_taylor_order", type=int, default=20)
+    parser.add_argument("--betti_probes", type=int, default=2)
     parser.add_argument("--topo_bins", type=int, default=32)
     parser.add_argument("--adjacent_pair_prob", type=float, default=0.7)
     parser.add_argument(
@@ -155,6 +161,12 @@ def main() -> None:
         warmup_vel_epochs=args.warmup_vel_epochs,
         morph_noise_sigma=args.morph_noise_sigma,
         sc_pos_edge_drop_prob=args.sc_pos_edge_drop_prob,
+        lambda_topo=args.lambda_topo,
+        topo_loss_bins=args.topo_loss_bins,
+        betti_sharpness=args.betti_sharpness,
+        betti_t=args.betti_t,
+        betti_taylor_order=args.betti_taylor_order,
+        betti_probes=args.betti_probes,
         use_s_mean=not args.disable_s_mean,
         topo_bins=args.topo_bins,
         adjacent_pair_prob=args.adjacent_pair_prob,

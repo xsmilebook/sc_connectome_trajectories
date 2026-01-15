@@ -2,7 +2,7 @@
 
 
 ## Current focus
-- 2026-01-15: Increase default CLG-ODE training horizon and warmup for longer convergence.
+- 2026-01-15: Add experimental Betti-curve topology loss to CLG-ODE training.
 
 ## Completed
 - 2026-01-12: Drafted the repo-structure refactor plan in `PLAN.md`.
@@ -39,6 +39,7 @@
 - 2026-01-15: Moved CLG-ODE logs into `outputs/logs/clg_ode/` and auto-select `master_port`.
 - 2026-01-15: Grouped per-fold outputs under a shared `runs/<time>_job<array_job_id>/fold{0..4}` root.
 - 2026-01-15: Updated CLG-ODE default training hyperparameters (longer epochs/patience, higher ODE steps, stronger vel/acc, small KL).
+- 2026-01-15: Added an experimental topology loss based on Betti curves (β0/β1) to constrain connected components and cycles.
 
 ## In progress
 
