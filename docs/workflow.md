@@ -121,7 +121,7 @@ python -m scripts.train_clg_ode \
   - `args.json`：完整 CLI 参数快照
   - `run_meta.json`：时间戳、Slurm jobid、world size、git 信息等元数据
   - `metrics.csv`：按 fold×epoch 记录的 train/val 总损失与 `L_manifold/L_vel/L_acc` 组件
-  - `test_sc_metrics.json`：测试集 SC 评估指标（`sc_log_mse/sc_log_mae/sc_log_pearson/sc_log_pearson_pos/sc_log_pearson_topk/ecc_l2/ecc_pearson`）
+  - `test_sc_metrics.json`：测试集 SC 评估指标（`sc_log_mse/sc_log_mae/sc_log_pearson/sc_log_pearson_pos/sc_log_pearson_topk/sc_log_pearson_sparse/ecc_l2/ecc_pearson`）
 - 如需固定运行目录名称（便于复现实验分组），可使用 `--run_name <name>` 覆盖默认命名。
 
 训练实现要点（与 `docs/reports/implementation_specification.md` 一致）：

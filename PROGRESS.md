@@ -2,7 +2,7 @@
 
 
 ## Current focus
-- 2026-01-15: Add sparse-aware correlation metrics to CLG-ODE test evaluation.
+- 2026-01-15: Add sparse-graph Pearson metric for top-k sparsified predictions.
 
 ## Completed
 - 2026-01-12: Drafted the repo-structure refactor plan in `PLAN.md`.
@@ -41,6 +41,7 @@
 - 2026-01-15: Updated CLG-ODE default training hyperparameters (longer epochs/patience, higher ODE steps, stronger vel/acc, small KL).
 - 2026-01-15: Added an experimental topology loss based on Betti curves (β0/β1) to constrain connected components and cycles.
 - 2026-01-15: Added masked and top-k Pearson correlations for SC evaluation to align sparse comparisons.
+- 2026-01-15: Added a full-graph Pearson computed after top-k sparsification (`sc_log_pearson_sparse`).
 
 ## In progress
 

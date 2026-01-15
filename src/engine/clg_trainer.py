@@ -531,7 +531,11 @@ class CLGTrainer:
             pred_sparse = torch.zeros_like(pred_weight)
         pred_sparse = pred_sparse - torch.diag_embed(torch.diagonal(pred_sparse, dim1=-2, dim2=-1))
 
-        pred_np = torch.log1p(pred_sparse).detach().cpu().numpy()
+        pred_sparse_log = torch.log1p(pred_sparse)
+        pred_sparse_vec = pred_sparse_log[triu_idx[0], triu_idx[1]]
+        corr_sparse = self._pearsonr_torch(pred_sparse_vec, true_vec)
+
+        pred_np = pred_sparse_log.detach().cpu().numpy()
         true_np = true_log.detach().cpu().numpy()
         ecc_pred = compute_ecc(pred_np, k=self.topo_bins)
         ecc_true = compute_ecc(true_np, k=self.topo_bins)
@@ -543,6 +547,7 @@ class CLGTrainer:
             "sc_log_pearson": corr,
             "sc_log_pearson_pos": corr_pos,
             "sc_log_pearson_topk": corr_topk,
+            "sc_log_pearson_sparse": corr_sparse,
             "ecc_l2": ecc_l2,
             "ecc_pearson": ecc_corr,
         }
