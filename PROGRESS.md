@@ -2,7 +2,7 @@
 
 
 ## Current focus
-- 2026-01-15: Switch default CLG-ODE submission to single-GPU and recommend fold-wise Slurm array runs.
+- 2026-01-15: Isolate CLG-ODE logs per folder and avoid torchrun port collisions.
 
 ## Completed
 - 2026-01-12: Drafted the repo-structure refactor plan in `PLAN.md`.
@@ -36,6 +36,7 @@
 - 2026-01-15: Made test metrics deterministic (`t0→t1`) and aligned ECC with sparsity via top-k masking.
 - 2026-01-15: Added `--cv_fold` support for per-fold CLG-ODE training as a single-GPU fallback.
 - 2026-01-15: Updated submission script to default to single-GPU and support fold-wise Slurm array execution.
+- 2026-01-15: Moved CLG-ODE logs into `outputs/logs/clg_ode/` and auto-select `master_port`.
 
 ## In progress
 

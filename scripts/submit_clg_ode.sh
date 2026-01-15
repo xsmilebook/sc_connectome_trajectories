@@ -4,8 +4,8 @@
 #SBATCH --gres=gpu:1
 #SBATCH -t 48:00:00
 #SBATCH -D /ibmgpfs/cuizaixu_lab/xuhaoshu/projects/sc_connectome_trajectories
-#SBATCH -o /ibmgpfs/cuizaixu_lab/xuhaoshu/projects/sc_connectome_trajectories/outputs/logs/%j.out
-#SBATCH -e /ibmgpfs/cuizaixu_lab/xuhaoshu/projects/sc_connectome_trajectories/outputs/logs/%j.err
+#SBATCH -o /ibmgpfs/cuizaixu_lab/xuhaoshu/projects/sc_connectome_trajectories/outputs/logs/clg_ode/%A_%a.out
+#SBATCH -e /ibmgpfs/cuizaixu_lab/xuhaoshu/projects/sc_connectome_trajectories/outputs/logs/clg_ode/%A_%a.err
 
 set -euo pipefail
 
@@ -43,6 +43,13 @@ if [[ -n "${FOLD_ID}" ]]; then
   RUN_SUFFIX="_fold${FOLD_ID}"
   FOLD_ARGS=(--cv_fold "${FOLD_ID}")
 fi
+JOB_ID="${SLURM_JOB_ID:-0}"
+BASE_PORT=$((10000 + (JOB_ID % 50000)))
+if [[ -n "${FOLD_ID}" ]]; then
+  MASTER_PORT=$((BASE_PORT + FOLD_ID))
+else
+  MASTER_PORT="${BASE_PORT}"
+fi
 
 singularity exec --nv \
   --bind /ibmgpfs:/ibmgpfs \
@@ -58,7 +65,7 @@ singularity exec --nv \
   --bind /ibmgpfs:/ibmgpfs \
   --bind /GPFS:/GPFS \
   "$CONTAINER" \
-  "$TORCHRUN_BIN" --nproc_per_node 1 -m scripts.train_clg_ode \
+  "$TORCHRUN_BIN" --nproc_per_node 1 --master_port "$MASTER_PORT" -m scripts.train_clg_ode \
     --sc_dir "$SC_DIR" \
     --morph_root "$MORPH_ROOT" \
     --subject_info_csv "$SUBJECT_INFO" \
