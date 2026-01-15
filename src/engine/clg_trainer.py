@@ -928,6 +928,7 @@ class CLGTrainer:
                 model = DistributedDataParallel(
                     model,
                     device_ids=[self.local_rank] if torch.cuda.is_available() else None,
+                    find_unused_parameters=True,
                 )
             optimizer = torch.optim.Adam(model.parameters(), lr=self.learning_rate)
             best_fold_val = math.inf
