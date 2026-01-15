@@ -508,13 +508,21 @@ class CLGTrainer:
         mse = torch.mean(diff ** 2).item()
         mae = torch.mean(torch.abs(diff)).item()
         corr = self._pearsonr_torch(pred_vec, true_vec)
+        mask_pos = true_vec > 0
+        if int(mask_pos.sum().item()) > 1:
+            corr_pos = self._pearsonr_torch(pred_vec[mask_pos], true_vec[mask_pos])
+        else:
+            corr_pos = 0.0
 
         true_vec = true_raw[triu_idx[0], triu_idx[1]]
         pos_count = int((true_vec > 0).sum().item())
+        corr_topk = 0.0
         if pos_count > 0:
             topk = torch.topk(pred_vec, k=pos_count, largest=True)
             mask = torch.zeros_like(pred_vec, dtype=torch.bool)
             mask[topk.indices] = True
+            if int(mask.sum().item()) > 1:
+                corr_topk = self._pearsonr_torch(pred_vec[mask], true_vec[mask])
             pred_sparse = torch.zeros_like(pred_weight)
             triu0, triu1 = triu_idx
             pred_sparse[triu0, triu1] = torch.where(mask, pred_vec, torch.zeros_like(pred_vec))
@@ -533,6 +541,8 @@ class CLGTrainer:
             "sc_log_mse": mse,
             "sc_log_mae": mae,
             "sc_log_pearson": corr,
+            "sc_log_pearson_pos": corr_pos,
+            "sc_log_pearson_topk": corr_topk,
             "ecc_l2": ecc_l2,
             "ecc_pearson": ecc_corr,
         }

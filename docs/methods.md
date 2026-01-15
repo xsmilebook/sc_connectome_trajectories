@@ -86,5 +86,7 @@
 - CLG-ODE 默认在 `--results_dir/runs/<timestamp>_job<jobid>/` 创建独立运行目录，保存 `args.json`、`run_meta.json`、`metrics.csv`，便于追溯与横向对比。
 - 测试集评估（当前仅评估 SC）在 `test` 上计算并保存：
   - `sc_log_mse` / `sc_log_mae` / `sc_log_pearson`：预测与真实的 `log(1 + A)` 上三角向量指标。
+  - `sc_log_pearson_pos`：仅在真实正边位置计算的 Pearson（`log(1 + A)` 域）。
+  - `sc_log_pearson_topk`：对预测进行 top-k 稀疏化后计算 Pearson（k 为真实正边数，`log(1 + A)` 域）。
   - `ecc_l2` / `ecc_pearson`：预测与真实的 Euler characteristic curve 相似性指标（基于 `log(1 + A)` 域，预测矩阵先按真实正边数量做 top-k 稀疏化）。
   - 当被试只有 1 个时间点时，测试指标基于同一时点的重建输出；当被试有 ≥2 个时间点时，使用固定的 `t0→t1` 预测输出（保证可重复）。
