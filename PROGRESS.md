@@ -2,7 +2,7 @@
 
 
 ## Current focus
-- 2026-01-15: Enable tiered CLG-ODE training (1/2/3 timepoints) with run-level logging and dataset tier reporting.
+- 2026-01-15: Add test-time SC evaluation metrics (log-domain errors + ECC similarity) for CLG-ODE.
 
 ## Completed
 - 2026-01-12: Drafted the repo-structure refactor plan in `PLAN.md`.
@@ -32,6 +32,7 @@
 - 2026-01-15: Enabled tiered training objectives for CLG-ODE so 1/2/3 timepoint subjects are all used (manifold/velocity/acceleration losses with warmup).
 - 2026-01-15: Added per-run directory naming (`<timestamp>_job<jobid>`) and persisted `args.json`, `run_meta.json`, and `metrics.csv` for experiment tracking.
 - 2026-01-15: Added a strict tier statistics script and generated an up-to-date dataset tier report under `docs/reports/`.
+- 2026-01-15: Added test-only SC evaluation metrics (log-domain MSE/MAE/pearson + ECC similarity) and saved them as `test_sc_metrics.json`.
 
 ## In progress
 

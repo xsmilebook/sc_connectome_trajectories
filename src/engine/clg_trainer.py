@@ -20,6 +20,7 @@ from torch.nn import functional as F
 
 from src.data.clg_dataset import CLGDataset, collate_clg_sequences
 from src.data.utils import compute_triu_indices, ensure_dir
+from src.data.topology import compute_ecc
 from src.engine.losses import edge_bce_loss, weight_huber_loss
 from src.models.clg_ode import CLGODE
 
@@ -162,6 +163,21 @@ class CLGTrainer:
         dist.all_reduce(tensor, op=dist.ReduceOp.SUM)
         total_out, count_out = tensor.tolist()
         return float(total_out), int(count_out)
+
+    def _reduce_metric_sums(self, metrics: Dict[str, float]) -> Dict[str, float]:
+        if not self.is_distributed or not dist.is_initialized():
+            return metrics
+        keys = sorted(metrics.keys())
+        tensor = torch.tensor([metrics[k] for k in keys], dtype=torch.float32, device=self.device)
+        dist.all_reduce(tensor, op=dist.ReduceOp.SUM)
+        return {k: float(v) for k, v in zip(keys, tensor.tolist())}
+
+    def _reduce_count(self, count: int) -> int:
+        if not self.is_distributed or not dist.is_initialized():
+            return count
+        tensor = torch.tensor([count], dtype=torch.float32, device=self.device)
+        dist.all_reduce(tensor, op=dist.ReduceOp.SUM)
+        return int(tensor.item())
 
     def _append_metrics_row(self, row: Dict[str, Any]) -> None:
         if not self.is_main:
@@ -339,6 +355,53 @@ class CLGTrainer:
         true_log = torch.log1p(a_true_raw[:, triu_idx[0], triu_idx[1]])
         loss_weight = weight_huber_loss(pred_log, true_log, target_vec)
         return loss_x, loss_edge, loss_weight
+
+    @staticmethod
+    def _pearsonr_torch(x: torch.Tensor, y: torch.Tensor) -> float:
+        x = x - x.mean()
+        y = y - y.mean()
+        denom = torch.sqrt(torch.sum(x ** 2) * torch.sum(y ** 2))
+        if denom.item() == 0:
+            return 0.0
+        return float((x * y).sum().item() / denom.item())
+
+    @staticmethod
+    def _pearsonr_np(x: np.ndarray, y: np.ndarray) -> float:
+        x = x - x.mean()
+        y = y - y.mean()
+        denom = np.sqrt(np.sum(x ** 2) * np.sum(y ** 2))
+        if denom == 0:
+            return 0.0
+        return float(np.sum(x * y) / denom)
+
+    def _sc_metrics(
+        self,
+        pred_weight: torch.Tensor,
+        true_raw: torch.Tensor,
+        triu_idx: Tuple[np.ndarray, np.ndarray],
+    ) -> Dict[str, float]:
+        pred_log = torch.log1p(pred_weight)
+        true_log = torch.log1p(true_raw)
+        pred_vec = pred_log[triu_idx[0], triu_idx[1]]
+        true_vec = true_log[triu_idx[0], triu_idx[1]]
+        diff = pred_vec - true_vec
+        mse = torch.mean(diff ** 2).item()
+        mae = torch.mean(torch.abs(diff)).item()
+        corr = self._pearsonr_torch(pred_vec, true_vec)
+
+        pred_np = pred_log.detach().cpu().numpy()
+        true_np = true_log.detach().cpu().numpy()
+        ecc_pred = compute_ecc(pred_np, k=self.topo_bins)
+        ecc_true = compute_ecc(true_np, k=self.topo_bins)
+        ecc_l2 = float(np.linalg.norm(ecc_pred - ecc_true))
+        ecc_corr = self._pearsonr_np(ecc_pred, ecc_true)
+        return {
+            "sc_log_mse": mse,
+            "sc_log_mae": mae,
+            "sc_log_pearson": corr,
+            "ecc_l2": ecc_l2,
+            "ecc_pearson": ecc_corr,
+        }
 
     def _prepare_pair_batch(
         self,
@@ -745,6 +808,100 @@ class CLGTrainer:
         }
         return total, metrics
 
+    def _evaluate_sc_metrics(
+        self,
+        model: nn.Module,
+        loader: DataLoader,
+        triu_idx: Tuple[np.ndarray, np.ndarray],
+        stats: NormStats,
+        volume_indices: List[int],
+    ) -> Dict[str, float]:
+        model.eval()
+        sums = {
+            "sc_log_mse": 0.0,
+            "sc_log_mae": 0.0,
+            "sc_log_pearson": 0.0,
+            "ecc_l2": 0.0,
+            "ecc_pearson": 0.0,
+        }
+        count = 0
+        with torch.no_grad():
+            for batch in loader:
+                if not batch:
+                    continue
+                lengths = batch["lengths"].tolist()
+                a_raw = batch["a_raw"].to(self.device)
+                a_log = batch["a_log"].to(self.device)
+                x = batch["x"].to(self.device)
+                ages = batch["ages"].to(self.device)
+                topo = batch["topo"].to(self.device)
+                strength = batch["strength"].to(self.device)
+                icv = batch["icv"].to(self.device)
+                sex = batch["sex"].to(self.device)
+                site = batch["site"].to(self.device)
+
+                for b, length in enumerate(lengths):
+                    if length >= 2:
+                        i, j = self._sample_pair(length)
+                    else:
+                        i, j = 0, None
+
+                    age_i = float(ages[b, i].item())
+                    if not np.isfinite(age_i):
+                        age_i = float(i)
+                    topo_i = self._zscore(topo[b, i], stats.topo_mean, stats.topo_std)
+                    strength_i = strength[b, i]
+                    if self.use_s_mean:
+                        cov = torch.cat([torch.tensor([age_i], device=self.device), strength_i, topo_i], dim=0)
+                    else:
+                        cov = torch.cat([torch.tensor([age_i], device=self.device), strength_i[:1], topo_i], dim=0)
+                    cov = cov.unsqueeze(0)
+                    sex_b = sex[b : b + 1]
+                    site_b = site[b : b + 1]
+
+                    x_i = self._apply_volume_norm_torch(x[b, i], icv[b, i], volume_indices)
+                    x_i = self._zscore(x_i, stats.morph_mean, stats.morph_std)
+                    a_i_log_clean = a_log[b, i]
+
+                    if j is None:
+                        times = torch.zeros((1, 1), dtype=torch.float32, device=self.device)
+                        outputs = model(
+                            a_i_log_clean.unsqueeze(0),
+                            x_i.unsqueeze(0),
+                            times,
+                            sex_b,
+                            site_b,
+                            cov,
+                            use_mu=True,
+                        )
+                        pred_weight = outputs.a_weight[0, 0]
+                        true_raw = a_raw[b, i]
+                    else:
+                        age_j = float(ages[b, j].item())
+                        dt_ij = self._clamp_dt(age_j - age_i, float(j - i))
+                        times = torch.tensor([[0.0, dt_ij]], dtype=torch.float32, device=self.device)
+                        outputs = model(
+                            a_i_log_clean.unsqueeze(0),
+                            x_i.unsqueeze(0),
+                            times,
+                            sex_b,
+                            site_b,
+                            cov,
+                            use_mu=True,
+                        )
+                        pred_weight = outputs.a_weight[0, -1]
+                        true_raw = a_raw[b, j]
+
+                    metrics = self._sc_metrics(pred_weight, true_raw, triu_idx)
+                    for k, v in metrics.items():
+                        sums[k] += float(v)
+                    count += 1
+
+        sums = self._reduce_metric_sums(sums)
+        total_count = self._reduce_count(count)
+        denom = total_count if total_count > 0 else 1.0
+        return {k: v / denom for k, v in sums.items()}
+
     def _train_cv(
         self,
         dataset: CLGDataset,
@@ -890,8 +1047,16 @@ class CLGTrainer:
             dataset.volume_metric_indices,
             epoch=self.max_epochs,
         )
+        sc_metrics = self._evaluate_sc_metrics(
+            model,
+            test_loader,
+            triu_idx,
+            best_stats,
+            dataset.volume_metric_indices,
+        )
         if self.is_main:
             self.summary["test_loss"] = float(test_loss)
+            self.summary["test_sc_metrics"] = sc_metrics
             self.summary["n_subjects"] = len(dataset)
             self.summary["n_trainval"] = len(trainval_indices)
             self.summary["n_test"] = len(test_indices)
@@ -902,6 +1067,12 @@ class CLGTrainer:
                 encoding="utf-8",
             ) as f:
                 json.dump(self.summary, f, indent=2)
+            with open(
+                os.path.join(self.results_dir, "test_sc_metrics.json"),
+                "w",
+                encoding="utf-8",
+            ) as f:
+                json.dump(sc_metrics, f, indent=2)
 
 
 def kl_divergence(mu: torch.Tensor, logvar: torch.Tensor) -> torch.Tensor:
