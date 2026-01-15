@@ -4,8 +4,9 @@ set -euo pipefail
 #SBATCH -p q_ai4
 #SBATCH --gres=gpu:1
 #SBATCH -t 24:00:00
-#SBATCH -o outputs/logs/%j.out
-#SBATCH -e outputs/logs/%j.err
+#SBATCH -D /ibmgpfs/cuizaixu_lab/xuhaoshu/projects/sc_connectome_trajectories
+#SBATCH -o /ibmgpfs/cuizaixu_lab/xuhaoshu/projects/sc_connectome_trajectories/outputs/logs/%j.out
+#SBATCH -e /ibmgpfs/cuizaixu_lab/xuhaoshu/projects/sc_connectome_trajectories/outputs/logs/%j.err
 
 module load singularity
 

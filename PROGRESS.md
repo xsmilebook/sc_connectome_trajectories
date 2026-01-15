@@ -2,7 +2,7 @@
 
 
 ## Current focus
-- 2026-01-15: Harden CLG-ODE submission script path resolution.
+- 2026-01-15: Switch CLG-ODE submission logs and workdir to absolute paths.
 
 ## Completed
 - 2026-01-12: Drafted the repo-structure refactor plan in `PLAN.md`.
@@ -25,6 +25,7 @@
 - 2026-01-14: Added the Singularity definition/build script and documented the container workflow.
 - 2026-01-15: Updated the CLG-ODE submission script to enforce python3 and validate resolved paths.
 - 2026-01-15: Added error handling around path resolution to avoid unbound variables in submission scripts.
+- 2026-01-15: Updated CLG-ODE submission script to use absolute log paths and workdir.
 
 ## In progress
 
