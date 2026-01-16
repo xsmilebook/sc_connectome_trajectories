@@ -48,6 +48,7 @@
 - 2026-01-16: Added fold length distribution logs and per-epoch vel/acc counts; randomize master_port to avoid collisions.
 - 2026-01-16: Updated workflow/cluster docs with log directory, port conflict, and new metrics fields.
 - 2026-01-16: Added topo loss normalization (quantile scale + log1p), GradNorm for manifold/topo, and 20% cosine warmup with new CLI flags and doc updates.
+- 2026-01-16: Added a short CLG-ODE smoke submission script and documented the usage in workflow.
 
 ## In progress
 

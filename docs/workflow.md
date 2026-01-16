@@ -167,6 +167,15 @@ sbatch scripts/submit_clg_ode.sh
 该脚本默认优先使用 `q_ai8`，若不可用再回落到 `q_ai4`，并通过 `torchrun` 启动单卡训练（自动选择 `master_port` 避免端口冲突）。可按需调整 `#SBATCH --gres` 与 `#SBATCH -t`。
 提交前请确保日志目录存在：`mkdir -p outputs/logs/clg_ode`。
 
+短跑 smoke 模板（单折、短 epoch）：
+
+```bash
+sbatch scripts/submit_clg_ode_smoke.sh
+```
+
+可选环境变量（不改脚本也能快速调整）：
+`FOLD_ID=0`，`MAX_EPOCHS=8`，`PATIENCE=3`，`BATCH_SIZE=2`，`TOPO_SCALE_Q=0.9`，`TOPO_WARMUP_FRAC=0.2`，`RUN_TAG=smoke`。
+
 如需按 fold 分拆提交（Slurm array，单卡每 fold）：
 
 ```bash
