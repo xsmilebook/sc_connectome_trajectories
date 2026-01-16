@@ -1,20 +1,20 @@
 # Plan
 
-Implement tiered CLG-ODE training so subjects with 1/2/3+ sessions are all usable, persist run-level records for reproducibility, and generate a strict tier availability report (SC+morph file existence) with documentation updates.
+Stabilize CLG-ODE training by normalizing topo features with a data-driven log compression, reweighting only topo/manifold via GradNorm, and adding a 20% cosine warmup for topo, while keeping the existing vel/acc masking + schedule intact.
 
 ## Scope
-- In: Tiered objective (manifold/velocity/acceleration), default denoising, run directory naming (timestamp+jobid), strict tier stats + docs report, and documentation/progress/session updates.
-- Out: Job submission actions, dataset regeneration, changes under `data/` or committed runtime artifacts under `outputs/`, and unrelated refactors.
+- In: Analyze current loss imbalance, implement `topo_norm = log1p(raw_topo / scale)` using q80/q90 scale, add GradNorm for `{topo, manifold}` only, add 20% cosine warmup on topo weight, expose new flags, and document the updated training strategy.
+- Out: Data regeneration, edits under `data/` or `outputs/`, structural refactors, or changes to vel/acc schedules beyond existing masks.
 
 ## Action items
-[x] Extend dataset handling to include subjects with 1 session (`min_length=1`) while still requiring strict SC+morph file existence.
-[x] Implement tiered training objectives: `L_manifold` (Tier 3/2/1), `L_vel` (Tier 2/1), `L_acc` (Tier 1) with a warmup schedule and recommended default weights.
-[x] Enable default denoising augmentation (morph noise + SC positive-edge dropout) and keep `s_mean` enabled by default.
-[x] Add per-run directory naming under `--results_dir/runs/<timestamp>_job<jobid>/` and persist `args.json`, `run_meta.json`, and per-epoch `metrics.csv`.
-[x] Add `python -m scripts.report_clg_ode_tiers` to compute strict tier availability and write a report to `docs/reports/`.
-[x] Update documentation (`README.md`, `docs/workflow.md`, `docs/methods.md`) plus `PROGRESS.md` and `docs/sessions/` to reflect tiered training and run tracking.
-[ ] Run a quick smoke validation in the Singularity container (single GPU and 4-GPU `torchrun`) without submitting jobs from the assistant.
+[ ] Review `outputs/results/clg_ode/.../fold0/metrics.csv` and training logs to quantify topo vs manifold magnitudes and confirm where normalization should hook in.
+[ ] Implement data-driven topo scaling (q80/q90 of raw topo bins) and `log1p` compression in the topo pipeline, deciding whether to apply before or after z-score.
+[ ] Add GradNorm weighting for `{topo, manifold}` only, leaving vel/acc governed by existing masks/schedules.
+[ ] Add a 20% cosine warmup for topo loss weight (or GradNorm target) to avoid early domination.
+[ ] Add CLI/config flags for `topo_scale_quantile`, `topo_log_compress`, `gradnorm_scope`, and `topo_warmup_frac`, and wire defaults into `scripts/train_clg_ode.py`.
+[ ] Update `docs/methods.md` and `docs/workflow.md` (if usage changes) plus `PROGRESS.md` and `docs/sessions/` to record the strategy.
+[ ] Run a quick validation (one fold, short epochs) to ensure loss scales and training stability improve without breaking metrics logging.
 [ ] Commit the change set with a clear message.
 
 ## Open questions
-- None.
+- Default scale quantile: choose q0.8 vs q0.9, or expose both via flag with q0.9 default?

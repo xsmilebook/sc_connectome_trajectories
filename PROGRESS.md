@@ -2,7 +2,7 @@
 
 
 ## Current focus
-- 2026-01-16: Consolidate documentation with updated training/logging and cluster error handling notes.
+- 2026-01-16: Plan CLG-ODE loss stabilization (topo normalization + GradNorm + warmup).
 
 ## Completed
 - 2026-01-12: Drafted the repo-structure refactor plan in `PLAN.md`.
