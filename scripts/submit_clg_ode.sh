@@ -2,7 +2,6 @@
 #SBATCH -J clg_ode
 #SBATCH -p q_ai8,q_ai4
 #SBATCH --gres=gpu:1
-#SBATCH -t 48:00:00
 #SBATCH -D /ibmgpfs/cuizaixu_lab/xuhaoshu/projects/sc_connectome_trajectories
 #SBATCH -o /ibmgpfs/cuizaixu_lab/xuhaoshu/projects/sc_connectome_trajectories/outputs/logs/clg_ode/%A_%a.out
 #SBATCH -e /ibmgpfs/cuizaixu_lab/xuhaoshu/projects/sc_connectome_trajectories/outputs/logs/clg_ode/%A_%a.err

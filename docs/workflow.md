@@ -164,7 +164,7 @@ python -m scripts.train_clg_ode \
 sbatch scripts/submit_clg_ode.sh
 ```
 
-该脚本默认优先使用 `q_ai8`，若不可用再回落到 `q_ai4`，并通过 `torchrun` 启动单卡训练（自动选择 `master_port` 避免端口冲突）。可按需调整 `#SBATCH --gres` 与 `#SBATCH -t`。
+该脚本默认优先使用 `q_ai8`，若不可用再回落到 `q_ai4`，并通过 `torchrun` 启动单卡训练（自动选择 `master_port` 避免端口冲突）。可按需调整 `#SBATCH --gres`。
 提交前请确保日志目录存在：`mkdir -p outputs/logs/clg_ode`。
 
 短跑 smoke 模板（单折、短 epoch）：

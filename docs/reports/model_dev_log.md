@@ -15,3 +15,11 @@
 
 1) 对比测试 q0.8：检查 `train_topo` 与 `topo_scale` 是否更稳、收敛更快。
 2) 若 `w_m` 长期贴近下限，考虑将 `gradnorm_weight_min` 提高到 0.2 或降低 `gradnorm_lr` 以平滑权重更新。
+
+### Smoke 结果（clg_ode_smoke_job13697578）
+
+- 运行目录：`outputs/results/clg_ode/runs/clg_ode_smoke_job13697578`
+- epoch=4：train_loss=0.485，val_loss=0.467
+- topo 量级：train_topo_raw=3.414e7，train_topo=1.202，topo_scale=1.770e7
+- GradNorm：w_m=0.10，w_t=2.00，warmup=1.0
+- 结论：拓扑压缩与 GradNorm 稳定，loss 量级正常，可进入完整训练。
