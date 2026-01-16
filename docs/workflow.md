@@ -176,6 +176,12 @@ sbatch scripts/submit_clg_ode_smoke.sh
 可选环境变量（不改脚本也能快速调整）：
 `FOLD_ID=0`，`MAX_EPOCHS=8`，`PATIENCE=3`，`BATCH_SIZE=2`，`TOPO_SCALE_Q=0.9`，`TOPO_WARMUP_FRAC=0.2`，`RUN_TAG=smoke`。
 
+一键提交包装脚本（直接走默认 smoke 参数）：
+
+```bash
+scripts/submit_clg_ode_smoke_now.sh
+```
+
 如需按 fold 分拆提交（Slurm array，单卡每 fold）：
 
 ```bash
