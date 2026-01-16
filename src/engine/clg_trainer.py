@@ -403,6 +403,8 @@ class CLGTrainer:
             return self._gradnorm_weights
         if "manifold" not in losses or "topo" not in losses:
             return self._gradnorm_weights
+        if any(not loss.requires_grad for loss in losses.values()):
+            return self._gradnorm_weights
         weights = dict(self._gradnorm_weights)
         if self.is_main:
             params = [p for p in model.parameters() if p.requires_grad]
@@ -721,13 +723,15 @@ class CLGTrainer:
         if pos_count <= 0:
             return torch.zeros_like(pred_weight), None
         pred_vec = pred_weight[triu_idx[0], triu_idx[1]]
-        topk = torch.topk(pred_vec, k=pos_count, largest=True)
+        topk = torch.topk(pred_vec.detach(), k=pos_count, largest=True)
         mask = torch.zeros_like(pred_vec, dtype=torch.bool)
         mask[topk.indices] = True
-        pred_sparse = torch.zeros_like(pred_weight)
-        pred_sparse[triu_idx[0], triu_idx[1]] = torch.where(mask, pred_vec, torch.zeros_like(pred_vec))
-        pred_sparse = pred_sparse + pred_sparse.transpose(-1, -2)
-        pred_sparse = pred_sparse - torch.diag_embed(torch.diagonal(pred_sparse, dim1=-2, dim2=-1))
+        mask_float = mask.to(dtype=pred_weight.dtype)
+        mask_full = torch.zeros_like(pred_weight)
+        mask_full[triu_idx[0], triu_idx[1]] = mask_float
+        mask_full = mask_full + mask_full.transpose(-1, -2)
+        mask_full = mask_full - torch.diag_embed(torch.diagonal(mask_full, dim1=-2, dim2=-1))
+        pred_sparse = pred_weight * mask_full
         return pred_sparse, mask
 
     def _prepare_pair_batch(

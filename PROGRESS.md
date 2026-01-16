@@ -49,6 +49,7 @@
 - 2026-01-16: Updated workflow/cluster docs with log directory, port conflict, and new metrics fields.
 - 2026-01-16: Added topo loss normalization (quantile scale + log1p), GradNorm for manifold/topo, and 20% cosine warmup with new CLI flags and doc updates.
 - 2026-01-16: Added a short CLG-ODE smoke submission script and documented the usage in workflow.
+- 2026-01-16: Fixed GradNorm crash by ensuring topo sparsification preserves gradients and adding a requires-grad guard.
 
 ## In progress
 
