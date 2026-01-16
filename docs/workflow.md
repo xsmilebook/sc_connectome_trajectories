@@ -174,6 +174,14 @@ sbatch --array=0-4 scripts/submit_clg_ode.sh
 
 结果将写入统一的运行根目录（`runs/<time>_job<array_job_id>/fold{0..4}/`）。
 
+如需让同一模型的不同 fold 强制落在同一目录，可在提交前显式设置统一时间戳：
+
+```bash
+export RUN_DATE=20260116
+export RUN_TIME=011137
+sbatch --array=0-4 scripts/submit_clg_ode.sh
+```
+
 训练脚本会在 `--results_dir` 下保存：
 
 - 最优 fold 的模型权重（`.pt`）

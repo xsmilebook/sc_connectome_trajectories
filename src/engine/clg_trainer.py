@@ -1024,6 +1024,9 @@ class CLGTrainer:
             "sc_log_mse": 0.0,
             "sc_log_mae": 0.0,
             "sc_log_pearson": 0.0,
+            "sc_log_pearson_pos": 0.0,
+            "sc_log_pearson_topk": 0.0,
+            "sc_log_pearson_sparse": 0.0,
             "ecc_l2": 0.0,
             "ecc_pearson": 0.0,
         }
@@ -1097,7 +1100,8 @@ class CLGTrainer:
 
                     metrics = self._sc_metrics(pred_weight, true_raw, triu_idx)
                     for k, v in metrics.items():
-                        sums[k] += float(v)
+                        if k in sums:
+                            sums[k] += float(v)
                     count += 1
 
         sums = self._reduce_metric_sums(sums)

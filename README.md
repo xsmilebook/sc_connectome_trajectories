@@ -101,7 +101,7 @@ CLG-ODE submission helper (uses paths from `configs/paths.yaml` and a Singularit
 sbatch scripts/submit_clg_ode.sh
 ```
 
-The submission script defaults to 1 GPU on `q_ai4` and uses `torchrun` for single-GPU training (auto-selects a `master_port` to avoid collisions). Create `outputs/logs/clg_ode` before submitting. Use a Slurm array with `--array=0-4` to split folds; fold outputs are grouped under `runs/<time>_job<array_job_id>/fold{0..4}/`.
+The submission script defaults to 1 GPU on `q_ai4` and uses `torchrun` for single-GPU training (auto-selects a `master_port` to avoid collisions). Create `outputs/logs/clg_ode` before submitting. Use a Slurm array with `--array=0-4` to split folds; fold outputs are grouped under `runs/<time>_job<array_job_id>/fold{0..4}/`. To force all folds into the same run directory, export `RUN_DATE` and `RUN_TIME` before submission.
 
 Container build (torch+CUDA+GNN, remote Singularity build):
 

@@ -45,12 +45,15 @@ if [[ -n "${FOLD_ID}" ]]; then
 fi
 JOB_ID="${SLURM_JOB_ID:-0}"
 ARRAY_JOB_ID="${SLURM_ARRAY_JOB_ID:-$JOB_ID}"
-START_TS="${SLURM_JOB_START_TIME:-}"
-if [[ -n "${START_TS}" ]]; then
-  TS="$(date -d "@${START_TS}" +%Y%m%d_%H%M%S 2>/dev/null || date +%Y%m%d_%H%M%S)"
-else
-  TS="$(date +%Y%m%d_%H%M%S)"
+TS_DATE="${RUN_DATE:-}"
+if [[ -z "${TS_DATE}" ]]; then
+  TS_DATE="$(date +%Y%m%d)"
 fi
+TS_TIME="${RUN_TIME:-}"
+if [[ -z "${TS_TIME}" ]]; then
+  TS_TIME="$(date +%H%M%S)"
+fi
+TS="${TS_DATE}_${TS_TIME}"
 RUN_BASE="${RUN_BASE:-clg_ode_${TS}_job${ARRAY_JOB_ID}}"
 if [[ -n "${FOLD_ID}" ]]; then
   RUN_NAME="${RUN_BASE}/fold${FOLD_ID}"
