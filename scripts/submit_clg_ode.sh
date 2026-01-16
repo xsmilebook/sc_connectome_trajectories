@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH -J clg_ode
-#SBATCH -p q_ai4
+#SBATCH -p q_ai8,q_ai4
 #SBATCH --gres=gpu:1
 #SBATCH -t 48:00:00
 #SBATCH -D /ibmgpfs/cuizaixu_lab/xuhaoshu/projects/sc_connectome_trajectories
@@ -61,12 +61,15 @@ else
   RUN_NAME="${RUN_BASE}"
 fi
 
-BASE_PORT=$((10000 + (JOB_ID % 50000)))
-if [[ -n "${FOLD_ID}" ]]; then
-  MASTER_PORT=$((BASE_PORT + FOLD_ID))
-else
-  MASTER_PORT="${BASE_PORT}"
-fi
+MASTER_PORT="$(python3 - <<'PY'
+import socket
+s = socket.socket()
+s.bind(("", 0))
+port = s.getsockname()[1]
+s.close()
+print(port)
+PY
+)"
 
 singularity exec --nv \
   --bind /ibmgpfs:/ibmgpfs \

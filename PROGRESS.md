@@ -2,7 +2,7 @@
 
 
 ## Current focus
-- 2026-01-16: Reduce default topology loss weight to keep loss scale stable.
+- 2026-01-16: Improve logging around vel/acc usage and reduce port conflicts in array runs.
 
 ## Completed
 - 2026-01-12: Drafted the repo-structure refactor plan in `PLAN.md`.
@@ -45,6 +45,7 @@
 - 2026-01-15: Applied top-k sparsification during training for `L_weight` and `L_topo`.
 - 2026-01-16: Fixed test metric aggregation for new pearson metrics and added RUN_DATE/RUN_TIME for consistent run folders.
 - 2026-01-16: Reduced default `lambda_topo` to 1e-3 to avoid loss explosion.
+- 2026-01-16: Added fold length distribution logs and per-epoch vel/acc counts; randomize master_port to avoid collisions.
 
 ## In progress
 

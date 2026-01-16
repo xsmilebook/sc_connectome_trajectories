@@ -696,6 +696,12 @@ class CLGTrainer:
                 "acc": (a_sum / a_count) if a_count > 0 else 0.0,
                 "topo": (t_sum / t_count) if t_count > 0 else 0.0,
             }
+            self._last_epoch_train_counts = {
+                "manifold": int(m_count),
+                "vel": int(v_count),
+                "acc": int(a_count),
+                "topo": int(t_count),
+            }
         return self._reduce_loss(total_loss, count)
 
     def _evaluate(
@@ -743,6 +749,12 @@ class CLGTrainer:
                 "vel": (v_sum / v_count) if v_count > 0 else 0.0,
                 "acc": (a_sum / a_count) if a_count > 0 else 0.0,
                 "topo": (t_sum / t_count) if t_count > 0 else 0.0,
+            }
+            self._last_epoch_val_counts = {
+                "manifold": int(m_count),
+                "vel": int(v_count),
+                "acc": int(a_count),
+                "topo": int(t_count),
             }
         return self._reduce_loss(total_loss, count)
 
@@ -1134,6 +1146,26 @@ class CLGTrainer:
                 continue
             train_idx = indices[train_idx_rel].tolist()
             val_idx = indices[val_idx_rel].tolist()
+            if self.is_main:
+                train_lengths = [len(dataset.sequences[i][1]) for i in train_idx]
+                val_lengths = [len(dataset.sequences[i][1]) for i in val_idx]
+                def _count(lengths: List[int]) -> Dict[str, int]:
+                    out = {"len1": 0, "len2": 0, "len3p": 0}
+                    for L in lengths:
+                        if L <= 1:
+                            out["len1"] += 1
+                        elif L == 2:
+                            out["len2"] += 1
+                        else:
+                            out["len3p"] += 1
+                    return out
+                train_cnt = _count(train_lengths)
+                val_cnt = _count(val_lengths)
+                print(
+                    "Fold length distribution: "
+                    f"train len1={train_cnt['len1']} len2={train_cnt['len2']} len3+={train_cnt['len3p']}; "
+                    f"val len1={val_cnt['len1']} len2={val_cnt['len2']} len3+={val_cnt['len3p']}"
+                )
             stats = self._compute_norm_stats(dataset, train_idx)
             train_loader = self._get_loader(dataset, train_idx, shuffle=True)
             val_loader = self._get_loader(dataset, val_idx, shuffle=False)
@@ -1183,6 +1215,8 @@ class CLGTrainer:
                     )
                     train_m = getattr(self, "_last_epoch_train_metrics", {})
                     val_m = getattr(self, "_last_epoch_val_metrics", {})
+                    train_c = getattr(self, "_last_epoch_train_counts", {})
+                    val_c = getattr(self, "_last_epoch_val_counts", {})
                     self._append_metrics_row(
                         {
                             "fold": fold_idx,
@@ -1193,10 +1227,14 @@ class CLGTrainer:
                             "train_vel": float(train_m.get("vel", 0.0)),
                             "train_acc": float(train_m.get("acc", 0.0)),
                             "train_topo": float(train_m.get("topo", 0.0)),
+                            "train_vel_count": int(train_c.get("vel", 0)),
+                            "train_acc_count": int(train_c.get("acc", 0)),
                             "val_manifold": float(val_m.get("manifold", 0.0)),
                             "val_vel": float(val_m.get("vel", 0.0)),
                             "val_acc": float(val_m.get("acc", 0.0)),
                             "val_topo": float(val_m.get("topo", 0.0)),
+                            "val_vel_count": int(val_c.get("vel", 0)),
+                            "val_acc_count": int(val_c.get("acc", 0)),
                             "enable_vel": int(epoch >= self.warmup_manifold_epochs),
                             "enable_acc": int(epoch >= self.warmup_vel_epochs),
                             "lambda_manifold": float(self.lambda_manifold),
