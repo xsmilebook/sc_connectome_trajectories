@@ -120,7 +120,7 @@ python -m scripts.train_clg_ode \
 - 运行目录中会保存：
   - `args.json`：完整 CLI 参数快照
   - `run_meta.json`：时间戳、Slurm jobid、world size、git 信息等元数据
-  - `metrics.csv`：按 fold×epoch 记录的 train/val 总损失与 `L_manifold/L_vel/L_acc` 组件
+  - `metrics.csv`：按 fold×epoch 记录的 train/val 总损失、`L_manifold/L_vel/L_acc/L_topo`，以及 `vel/acc` 触发计数（`*_vel_count`/`*_acc_count`）
   - `test_sc_metrics.json`：测试集 SC 评估指标（`sc_log_mse/sc_log_mae/sc_log_pearson/sc_log_pearson_pos/sc_log_pearson_topk/sc_log_pearson_sparse/ecc_l2/ecc_pearson`）
 - 如需固定运行目录名称（便于复现实验分组），可使用 `--run_name <name>` 覆盖默认命名。
 
@@ -181,6 +181,11 @@ export RUN_DATE=20260116
 export RUN_TIME=011137
 sbatch --array=0-4 scripts/submit_clg_ode.sh
 ```
+
+日志与诊断提示：
+
+- 若出现 `Address already in use`（`torchrun` 端口冲突），确保使用最新提交脚本（自动随机端口）。
+- 若 `train_vel/val_vel/train_acc` 长期为 0，查看 `metrics.csv` 的 `*_vel_count`/`*_acc_count`，并检查 fold 的样本长度分布（脚本会在 fold 开始时打印）。
 
 训练脚本会在 `--results_dir` 下保存：
 

@@ -8,6 +8,7 @@
 - `docs/methods.md`: 模型与训练/评估口径（面向方法学一致性）。
 - `docs/data_dictionary.md`: 关键表格与文件格式索引（字段/命名约定）。
 - `docs/cluster_gpu_usage.md`: 当前集群 GPU 使用规范（Slurm + Singularity；避免登录节点运行与在线安装依赖）。
+  - 包含端口冲突、日志目录等常见报错的处理建议。
 - `docs/research/research_plan.md`: 研究计划与阶段性设想（可能与实现存在时间差）。
 - `docs/reports/implementation_specification.md`: CLG-ODE 方法学最终规范（锁定；实现以此为准）。
 - `docs/reports/clg_ode_dataset_tiers.md`: CLG-ODE 训练数据的 Tier 1/2/3 可用性统计（严格文件存在性口径）。

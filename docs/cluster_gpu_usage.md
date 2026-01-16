@@ -36,7 +36,7 @@ AI agent 能够：
 | `q_ai8`   | NVIDIA Tesla V100   | 8 / 节点 | 32 GB    | 4 cores   | 108 GB   | 多卡训练 / DDP    | ai01,ai02|
 | `q_gpu_c` | NVIDIA RTX 6000 Ada | 8 / 节点 | 48 GB    | 32 cores  | 183 GB   | 大模型 / 高显存     | 暂无  |
 
-> ⚠️ **AI agent 只能在以上队列申请 GPU**，不能在 `q_cn / q_fat` 等 CPU 队列请求 GPU。优先使用`q_ai4`
+> ⚠️ **AI agent 只能在以上队列申请 GPU**，不能在 `q_cn / q_fat` 等 CPU 队列请求 GPU。优先 `q_ai8`，其次 `q_ai4`。
 
 ---
 
@@ -128,7 +128,7 @@ Slurm + singularity exec --nv
 ```bash
 #!/bin/bash
 #SBATCH -J gnn_train
-#SBATCH -p q_ai4
+#SBATCH -p q_ai8,q_ai4
 #SBATCH --gres=gpu:1
 #SBATCH -t 24:00:00
 #SBATCH -o outputs/logs/%j.out
@@ -158,6 +158,16 @@ singularity exec --nv \
     --subject_info_csv data/processed/table/subject_info_sc.csv \
     --results_dir outputs/results/clg_ode
 ```
+
+提示（日志目录）：
+
+```bash
+mkdir -p outputs/logs/clg_ode
+```
+
+提示（端口冲突）：
+
+- 若出现 `Address already in use`，请为 `torchrun` 选择空闲端口（本仓库提交脚本已自动完成）。
 
 ### 6.2 AI Agent 的检查清单（运行前）
 
@@ -207,6 +217,8 @@ print(torch.cuda.get_device_name(0))
 | 作业 Pending                      | GPU 队列满   | 换队列 / 减 GPU |
 | CUDA error                      | 版本不匹配     | 回退 CUDA     |
 | 编译失败                            | pip 编译扩展  | 换预编译 wheel  |
+| `Address already in use`        | `torchrun` 端口冲突 | 指定或随机化 `master_port` |
+| `slurm-<jobid>.out` 回落         | 日志目录不存在 | 提前创建日志目录 |
 
 ---
 
