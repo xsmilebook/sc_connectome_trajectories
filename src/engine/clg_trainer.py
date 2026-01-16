@@ -66,6 +66,16 @@ class CLGTrainer:
         betti_t: float = 10.0,
         betti_taylor_order: int = 20,
         betti_probes: int = 2,
+        topo_log_compress: bool = True,
+        topo_scale_quantile: float = 0.9,
+        topo_scale_ema: float = 0.9,
+        topo_scale_min: float = 1e-6,
+        topo_warmup_frac: float = 0.2,
+        gradnorm_scope: str = "manifold_topo",
+        gradnorm_alpha: float = 0.5,
+        gradnorm_lr: float = 0.1,
+        gradnorm_weight_min: float = 0.1,
+        gradnorm_weight_max: float = 10.0,
         cv_folds: int = 5,
         cv_fold: int | None = None,
         rank: int = 0,
@@ -103,6 +113,20 @@ class CLGTrainer:
         self.betti_t = float(betti_t)
         self.betti_taylor_order = int(betti_taylor_order)
         self.betti_probes = int(betti_probes)
+        self.topo_log_compress = bool(topo_log_compress)
+        self.topo_scale_quantile = float(topo_scale_quantile)
+        self.topo_scale_ema = float(topo_scale_ema)
+        self.topo_scale_min = float(topo_scale_min)
+        self.topo_warmup_frac = float(topo_warmup_frac)
+        scope = gradnorm_scope.strip().lower()
+        if scope not in {"manifold_topo", "none"}:
+            raise ValueError(f"Unsupported gradnorm_scope: {gradnorm_scope}")
+        self.gradnorm_scope = scope
+        self.gradnorm_enabled = scope != "none"
+        self.gradnorm_alpha = float(gradnorm_alpha)
+        self.gradnorm_lr = float(gradnorm_lr)
+        self.gradnorm_weight_min = float(gradnorm_weight_min)
+        self.gradnorm_weight_max = float(gradnorm_weight_max)
         self.cv_folds = cv_folds
         self.cv_fold = cv_fold
         self.rank = rank
@@ -118,6 +142,9 @@ class CLGTrainer:
         self._rng = np.random.default_rng(self.random_state + self.rank)
         self.metrics_csv_path = os.path.join(self.results_dir, "metrics.csv")
         self._betti_probe_cache: Dict[int, torch.Tensor] = {}
+        self._topo_scale = 1.0
+        self._gradnorm_weights = {"manifold": 1.0, "topo": 1.0}
+        self._gradnorm_init_losses: Dict[str, torch.Tensor] = {}
 
     def _build_dataset(self) -> CLGDataset:
         return CLGDataset(
@@ -312,6 +339,149 @@ class CLGTrainer:
     @staticmethod
     def _zscore(x: torch.Tensor, mean: torch.Tensor, std: torch.Tensor) -> torch.Tensor:
         return (x - mean) / std
+
+    def _topo_scale_value(self) -> float:
+        scale = float(self._topo_scale)
+        if not np.isfinite(scale) or scale <= 0:
+            scale = float(self.topo_scale_min)
+        return max(scale, float(self.topo_scale_min))
+
+    def _topo_warmup_factor(self, epoch: int) -> float:
+        frac = float(self.topo_warmup_frac)
+        if frac <= 0:
+            return 1.0
+        warmup_epochs = max(int(math.ceil(self.max_epochs * frac)), 1)
+        if epoch >= warmup_epochs:
+            return 1.0
+        progress = float(epoch + 1) / float(warmup_epochs)
+        return 0.5 * (1.0 - math.cos(math.pi * progress))
+
+    def _normalize_topo_loss(self, topo_raw: torch.Tensor) -> torch.Tensor:
+        scale = self._topo_scale_value()
+        scale_t = torch.tensor(scale, device=topo_raw.device, dtype=topo_raw.dtype)
+        topo_scaled = topo_raw / scale_t
+        if self.topo_log_compress:
+            return torch.log1p(topo_scaled)
+        return topo_scaled
+
+    def _update_topo_scale(self, values: List[float]) -> None:
+        if not values:
+            return
+        arr = np.asarray([v for v in values if np.isfinite(v)], dtype=np.float64)
+        if arr.size == 0:
+            return
+        q = float(self.topo_scale_quantile)
+        q = min(max(q, 0.0), 1.0)
+        scale = float(np.quantile(arr, q))
+        if not np.isfinite(scale):
+            return
+        scale = max(scale, float(self.topo_scale_min))
+        self._topo_scale = (
+            self.topo_scale_ema * self._topo_scale + (1.0 - self.topo_scale_ema) * scale
+        )
+
+    def _sync_topo_scale(self) -> None:
+        if not self.is_distributed or not dist.is_initialized():
+            return
+        tensor = torch.tensor([self._topo_scale], dtype=torch.float32, device=self.device)
+        dist.broadcast(tensor, src=0)
+        self._topo_scale = float(tensor.item())
+
+    def _gradnorm_lambda(self, name: str) -> float:
+        if name == "manifold":
+            return float(self.lambda_manifold)
+        if name == "topo":
+            return float(self.lambda_topo)
+        return 1.0
+
+    def _compute_gradnorm_weights(
+        self,
+        model: nn.Module,
+        losses: Dict[str, torch.Tensor],
+    ) -> Dict[str, float]:
+        if not self.gradnorm_enabled:
+            return self._gradnorm_weights
+        if "manifold" not in losses or "topo" not in losses:
+            return self._gradnorm_weights
+        weights = dict(self._gradnorm_weights)
+        if self.is_main:
+            params = [p for p in model.parameters() if p.requires_grad]
+            g_norms: Dict[str, torch.Tensor] = {}
+            for name, loss in losses.items():
+                grads = torch.autograd.grad(
+                    loss,
+                    params,
+                    retain_graph=True,
+                    allow_unused=True,
+                )
+                norms = [g.norm() for g in grads if g is not None]
+                if norms:
+                    g_norm = torch.norm(torch.stack(norms))
+                else:
+                    g_norm = torch.tensor(0.0, device=self.device)
+                g_norms[name] = g_norm
+
+            skip_update = any(not torch.isfinite(g) or g.item() <= 0 for g in g_norms.values())
+            if not skip_update:
+                if not self._gradnorm_init_losses:
+                    self._gradnorm_init_losses = {k: v.detach() for k, v in losses.items()}
+
+                eps = 1e-6
+                loss_ratios = []
+                ratio_map: Dict[str, torch.Tensor] = {}
+                for name, loss in losses.items():
+                    init = self._gradnorm_init_losses.get(name)
+                    if init is None or not torch.isfinite(init):
+                        init = loss.detach()
+                        self._gradnorm_init_losses[name] = init
+                    ratio = torch.clamp(loss.detach() / (init + eps), min=eps)
+                    ratio_map[name] = ratio
+                    loss_ratios.append(ratio)
+                avg_ratio = torch.stack(loss_ratios).mean()
+                if not torch.isfinite(avg_ratio) or avg_ratio.item() == 0:
+                    avg_ratio = torch.tensor(1.0, device=self.device)
+
+                g_vals = []
+                for name in losses:
+                    g_vals.append(g_norms[name] * self._gradnorm_lambda(name) * weights[name])
+                g_avg = torch.stack(g_vals).mean()
+
+                new_weights: Dict[str, float] = {}
+                for name in losses:
+                    r = ratio_map[name] / avg_ratio
+                    target = g_avg * (r ** self.gradnorm_alpha)
+                    denom = g_norms[name] * self._gradnorm_lambda(name)
+                    denom = torch.clamp(denom, min=eps)
+                    new_w = target / denom
+                    new_weights[name] = float(new_w.detach().item())
+
+                total = sum(new_weights.values())
+                if total > 0:
+                    scale = len(new_weights) / total
+                    for name in new_weights:
+                        new_weights[name] *= scale
+
+                for name in new_weights:
+                    new_weights[name] = float(
+                        np.clip(new_weights[name], self.gradnorm_weight_min, self.gradnorm_weight_max)
+                    )
+                    new_weights[name] = (1.0 - self.gradnorm_lr) * weights[name] + self.gradnorm_lr * new_weights[name]
+
+                weights = new_weights
+                self._gradnorm_weights = weights
+
+        if self.is_distributed and dist.is_initialized():
+            tensor = torch.tensor(
+                [weights.get("manifold", 1.0), weights.get("topo", 1.0)],
+                dtype=torch.float32,
+                device=self.device,
+            )
+            dist.broadcast(tensor, src=0)
+            self._gradnorm_weights = {
+                "manifold": float(tensor[0].item()),
+                "topo": float(tensor[1].item()),
+            }
+        return self._gradnorm_weights
 
     def _sample_pair(self, length: int) -> Tuple[int, int]:
         if length <= 2:
@@ -664,10 +834,12 @@ class CLGTrainer:
         v_sum = 0.0
         a_sum = 0.0
         t_sum = 0.0
+        t_raw_sum = 0.0
         m_count = 0
         v_count = 0
         a_count = 0
         t_count = 0
+        topo_raw_values: List[float] = []
         for batch in loader:
             if not batch:
                 continue
@@ -681,20 +853,27 @@ class CLGTrainer:
             v_sum += metrics["vel_sum"]
             a_sum += metrics["acc_sum"]
             t_sum += metrics.get("topo_sum", 0.0)
+            t_raw_sum += metrics.get("topo_raw_sum", 0.0)
             m_count += metrics["manifold_count"]
             v_count += metrics["vel_count"]
             a_count += metrics["acc_count"]
             t_count += metrics.get("topo_count", 0)
+            if self.is_main:
+                raw_vals = metrics.get("topo_raw_values")
+                if raw_vals:
+                    topo_raw_values.extend(raw_vals)
         m_sum, m_count = self._reduce_sum_count(m_sum, m_count)
         v_sum, v_count = self._reduce_sum_count(v_sum, v_count)
         a_sum, a_count = self._reduce_sum_count(a_sum, a_count)
         t_sum, t_count = self._reduce_sum_count(t_sum, t_count)
+        t_raw_sum, _ = self._reduce_sum_count(t_raw_sum, t_count)
         if self.is_main:
             self._last_epoch_train_metrics = {
                 "manifold": (m_sum / m_count) if m_count > 0 else 0.0,
                 "vel": (v_sum / v_count) if v_count > 0 else 0.0,
                 "acc": (a_sum / a_count) if a_count > 0 else 0.0,
                 "topo": (t_sum / t_count) if t_count > 0 else 0.0,
+                "topo_raw": (t_raw_sum / t_count) if t_count > 0 else 0.0,
             }
             self._last_epoch_train_counts = {
                 "manifold": int(m_count),
@@ -702,6 +881,9 @@ class CLGTrainer:
                 "acc": int(a_count),
                 "topo": int(t_count),
             }
+        if self.is_main:
+            self._update_topo_scale(topo_raw_values)
+        self._sync_topo_scale()
         return self._reduce_loss(total_loss, count)
 
     def _evaluate(
@@ -720,6 +902,7 @@ class CLGTrainer:
         v_sum = 0.0
         a_sum = 0.0
         t_sum = 0.0
+        t_raw_sum = 0.0
         m_count = 0
         v_count = 0
         a_count = 0
@@ -735,6 +918,7 @@ class CLGTrainer:
                 v_sum += metrics["vel_sum"]
                 a_sum += metrics["acc_sum"]
                 t_sum += metrics.get("topo_sum", 0.0)
+                t_raw_sum += metrics.get("topo_raw_sum", 0.0)
                 m_count += metrics["manifold_count"]
                 v_count += metrics["vel_count"]
                 a_count += metrics["acc_count"]
@@ -743,12 +927,14 @@ class CLGTrainer:
         v_sum, v_count = self._reduce_sum_count(v_sum, v_count)
         a_sum, a_count = self._reduce_sum_count(a_sum, a_count)
         t_sum, t_count = self._reduce_sum_count(t_sum, t_count)
+        t_raw_sum, _ = self._reduce_sum_count(t_raw_sum, t_count)
         if self.is_main:
             self._last_epoch_val_metrics = {
                 "manifold": (m_sum / m_count) if m_count > 0 else 0.0,
                 "vel": (v_sum / v_count) if v_count > 0 else 0.0,
                 "acc": (a_sum / a_count) if a_count > 0 else 0.0,
                 "topo": (t_sum / t_count) if t_count > 0 else 0.0,
+                "topo_raw": (t_raw_sum / t_count) if t_count > 0 else 0.0,
             }
             self._last_epoch_val_counts = {
                 "manifold": int(m_count),
@@ -1000,9 +1186,28 @@ class CLGTrainer:
         mean_vel = torch.stack(loss_vel).mean() if loss_vel else torch.tensor(0.0, device=self.device)
         mean_acc = torch.stack(loss_acc).mean() if loss_acc else torch.tensor(0.0, device=self.device)
         mean_kl = torch.stack(loss_kl).mean() if loss_kl else torch.tensor(0.0, device=self.device)
-        mean_topo = torch.stack(loss_topo).mean() if loss_topo else torch.tensor(0.0, device=self.device)
+        if loss_topo:
+            topo_raw = torch.stack(loss_topo)
+            mean_topo_raw = topo_raw.mean()
+            topo_norm = self._normalize_topo_loss(topo_raw)
+            mean_topo = topo_norm.mean()
+            topo_raw_values = [float(v) for v in topo_raw.detach().cpu().numpy().tolist()]
+        else:
+            mean_topo_raw = torch.tensor(0.0, device=self.device)
+            mean_topo = torch.tensor(0.0, device=self.device)
+            topo_raw_values = []
 
-        total = self.lambda_manifold * mean_manifold
+        weights = {"manifold": 1.0, "topo": 1.0}
+        if self.gradnorm_enabled and self.lambda_topo > 0 and loss_topo:
+            weights = self._compute_gradnorm_weights(
+                model,
+                {"manifold": mean_manifold, "topo": mean_topo},
+            )
+        w_manifold = float(weights.get("manifold", 1.0))
+        w_topo = float(weights.get("topo", 1.0))
+        topo_warmup = self._topo_warmup_factor(epoch)
+
+        total = self.lambda_manifold * w_manifold * mean_manifold
         if enable_vel:
             total = total + self.lambda_vel * mean_vel
         if enable_acc:
@@ -1010,16 +1215,18 @@ class CLGTrainer:
         if self.lambda_kl > 0:
             total = total + self.lambda_kl * mean_kl
         if self.lambda_topo > 0:
-            total = total + self.lambda_topo * mean_topo
+            total = total + self.lambda_topo * w_topo * topo_warmup * mean_topo
         metrics = {
             "manifold_sum": float(mean_manifold.detach().item()) * max(len(loss_manifold), 1),
             "vel_sum": float(mean_vel.detach().item()) * max(len(loss_vel), 1),
             "acc_sum": float(mean_acc.detach().item()) * max(len(loss_acc), 1),
             "topo_sum": float(mean_topo.detach().item()) * max(len(loss_topo), 1),
+            "topo_raw_sum": float(mean_topo_raw.detach().item()) * max(len(loss_topo), 1),
             "manifold_count": int(len(loss_manifold)),
             "vel_count": int(len(loss_vel)),
             "acc_count": int(len(loss_acc)),
             "topo_count": int(len(loss_topo)),
+            "topo_raw_values": topo_raw_values,
         }
         return total, metrics
 
@@ -1227,12 +1434,14 @@ class CLGTrainer:
                             "train_vel": float(train_m.get("vel", 0.0)),
                             "train_acc": float(train_m.get("acc", 0.0)),
                             "train_topo": float(train_m.get("topo", 0.0)),
+                            "train_topo_raw": float(train_m.get("topo_raw", 0.0)),
                             "train_vel_count": int(train_c.get("vel", 0)),
                             "train_acc_count": int(train_c.get("acc", 0)),
                             "val_manifold": float(val_m.get("manifold", 0.0)),
                             "val_vel": float(val_m.get("vel", 0.0)),
                             "val_acc": float(val_m.get("acc", 0.0)),
                             "val_topo": float(val_m.get("topo", 0.0)),
+                            "val_topo_raw": float(val_m.get("topo_raw", 0.0)),
                             "val_vel_count": int(val_c.get("vel", 0)),
                             "val_acc_count": int(val_c.get("acc", 0)),
                             "enable_vel": int(epoch >= self.warmup_manifold_epochs),
@@ -1242,6 +1451,15 @@ class CLGTrainer:
                             "lambda_acc": float(self.lambda_acc),
                             "lambda_kl": float(self.lambda_kl),
                             "lambda_topo": float(self.lambda_topo),
+                            "topo_scale": float(self._topo_scale),
+                            "topo_scale_quantile": float(self.topo_scale_quantile),
+                            "topo_log_compress": int(self.topo_log_compress),
+                            "topo_warmup_frac": float(self.topo_warmup_frac),
+                            "topo_warmup_factor": float(self._topo_warmup_factor(epoch)),
+                            "gradnorm_scope": self.gradnorm_scope,
+                            "gradnorm_alpha": float(self.gradnorm_alpha),
+                            "gradnorm_weight_manifold": float(self._gradnorm_weights.get("manifold", 1.0)),
+                            "gradnorm_weight_topo": float(self._gradnorm_weights.get("topo", 1.0)),
                             "topo_loss_bins": int(self.topo_loss_bins),
                             "betti_sharpness": float(self.betti_sharpness),
                             "betti_t": float(self.betti_t),

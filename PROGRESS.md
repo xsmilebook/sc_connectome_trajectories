@@ -2,7 +2,7 @@
 
 
 ## Current focus
-- 2026-01-16: Plan CLG-ODE loss stabilization (topo normalization + GradNorm + warmup).
+- 2026-01-16: Validate CLG-ODE loss stabilization changes (topo normalization + GradNorm + warmup).
 
 ## Completed
 - 2026-01-12: Drafted the repo-structure refactor plan in `PLAN.md`.
@@ -47,6 +47,7 @@
 - 2026-01-16: Reduced default `lambda_topo` to 1e-3 to avoid loss explosion.
 - 2026-01-16: Added fold length distribution logs and per-epoch vel/acc counts; randomize master_port to avoid collisions.
 - 2026-01-16: Updated workflow/cluster docs with log directory, port conflict, and new metrics fields.
+- 2026-01-16: Added topo loss normalization (quantile scale + log1p), GradNorm for manifold/topo, and 20% cosine warmup with new CLI flags and doc updates.
 
 ## In progress
 

@@ -120,7 +120,7 @@ python -m scripts.train_clg_ode \
 - 运行目录中会保存：
   - `args.json`：完整 CLI 参数快照
   - `run_meta.json`：时间戳、Slurm jobid、world size、git 信息等元数据
-  - `metrics.csv`：按 fold×epoch 记录的 train/val 总损失、`L_manifold/L_vel/L_acc/L_topo`，以及 `vel/acc` 触发计数（`*_vel_count`/`*_acc_count`）
+- `metrics.csv`：按 fold×epoch 记录的 train/val 总损失、`L_manifold/L_vel/L_acc/L_topo`（含 `train_topo_raw/val_topo_raw`）、`vel/acc` 触发计数（`*_vel_count`/`*_acc_count`），以及拓扑缩放/GradNorm/warmup 相关字段。
   - `test_sc_metrics.json`：测试集 SC 评估指标（`sc_log_mse/sc_log_mae/sc_log_pearson/sc_log_pearson_pos/sc_log_pearson_topk/sc_log_pearson_sparse/ecc_l2/ecc_pearson`）
 - 如需固定运行目录名称（便于复现实验分组），可使用 `--run_name <name>` 覆盖默认命名。
 
@@ -130,6 +130,7 @@ python -m scripts.train_clg_ode \
 - `s_mean` 默认启用，可用 `--disable_s_mean` 关闭。
 - 形态学特征按 ROI×Metric 列在训练集上做 Z-score（含可选 ICV/TIV 归一化）。
 - 拓扑特征（ECC 向量）仅作条件输入，不参与训练 loss。
+- 拓扑损失在训练期使用分位数尺度（q0.8/q0.9）+ `log1p` 压缩，并通过 GradNorm 仅对 `L_manifold/L_topo` 动态加权；`L_topo` 额外使用 20% cosine warmup。
 - 采用多起点配对采样：相邻访视 70%，任意 i<j 组合 30%。
 - 默认启用轻量去噪增强（train-only）：形态学高斯噪声（`morph_noise_sigma=0.05`）与 SC 正边 dropout（`sc_pos_edge_drop_prob=0.02`）。
 - 支持 1/2/3 个时间点的被试共同训练（Tier 3/2/1）；对应 `L_manifold/L_vel/L_acc` 的启用与 warmup 见 `docs/methods.md`。

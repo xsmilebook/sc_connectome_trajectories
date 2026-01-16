@@ -82,6 +82,25 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--betti_t", type=float, default=10.0)
     parser.add_argument("--betti_taylor_order", type=int, default=20)
     parser.add_argument("--betti_probes", type=int, default=2)
+    parser.add_argument("--topo_scale_quantile", type=float, default=0.9)
+    parser.add_argument(
+        "--disable_topo_log_compress",
+        action="store_true",
+        help="Disable log1p compression for topo loss scaling.",
+    )
+    parser.add_argument(
+        "--topo_warmup_frac",
+        type=float,
+        default=0.2,
+        help="Cosine warmup fraction for topo loss weight (0-1).",
+    )
+    parser.add_argument(
+        "--gradnorm_scope",
+        type=str,
+        default="manifold_topo",
+        choices=["manifold_topo", "none"],
+        help="GradNorm scope for balancing losses.",
+    )
     parser.add_argument("--topo_bins", type=int, default=32)
     parser.add_argument("--adjacent_pair_prob", type=float, default=0.7)
     parser.add_argument(
@@ -167,6 +186,10 @@ def main() -> None:
         betti_t=args.betti_t,
         betti_taylor_order=args.betti_taylor_order,
         betti_probes=args.betti_probes,
+        topo_log_compress=not args.disable_topo_log_compress,
+        topo_scale_quantile=args.topo_scale_quantile,
+        topo_warmup_frac=args.topo_warmup_frac,
+        gradnorm_scope=args.gradnorm_scope,
         use_s_mean=not args.disable_s_mean,
         topo_bins=args.topo_bins,
         adjacent_pair_prob=args.adjacent_pair_prob,

@@ -44,6 +44,7 @@
   - `L_vel`：Tier 2/1 使用（潜空间速度场一致性/监督）。
   - `L_acc`：Tier 1 使用（潜空间加速度/非线性项）。
   - 默认权重与 warmup：`λ_manifold=1.0`，`λ_vel=0.2`，`λ_acc=0.1`；前 10 个 epoch 仅优化 `L_manifold`，第 11–20 个 epoch 启用 `L_vel`，第 21 个 epoch 起启用 `L_acc`。
+  - `L_manifold` 与 `L_topo` 采用 GradNorm 动态加权（仅作用于这两个项），`L_vel/L_acc` 仍按原 warmup 与 mask 触发。
 
 ### 拓扑损失：Betti curve（β0/β1）
 
@@ -68,7 +69,10 @@
 
 损失形式（默认启用）：
 - `L_topo = mean_τ[ Huber(β0_pred(τ) - β0_true(τ)) + Huber(β1_pred(τ) - β1_true(τ)) ]`
-- 总损失加权：`L += λ_topo * L_topo`（默认 `λ_topo=1e-3`）。
+- 为缓解量级失衡，先对拓扑损失做归一化与对数压缩：
+  - 令 `L_topo_raw` 为原始拓扑损失，`scale` 为训练期 `L_topo_raw` 的分位数尺度（默认 q0.9，可改 q0.8）。
+  - `L_topo_norm = log1p(L_topo_raw / scale)`。
+- 总损失加权：`L += λ_topo * w_topo * L_topo_norm`，其中 `w_topo` 由 GradNorm 得到，并对 `λ_topo` 施加 20% cosine warmup。
 
 ### 稀疏化训练（预测图）
 
