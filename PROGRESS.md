@@ -2,7 +2,7 @@
 
 
 ## Current focus
-- 2026-01-16: Fix test metric aggregation and allow stable run folder naming across folds.
+- 2026-01-16: Reduce default topology loss weight to keep loss scale stable.
 
 ## Completed
 - 2026-01-12: Drafted the repo-structure refactor plan in `PLAN.md`.
@@ -44,6 +44,7 @@
 - 2026-01-15: Added a full-graph Pearson computed after top-k sparsification (`sc_log_pearson_sparse`).
 - 2026-01-15: Applied top-k sparsification during training for `L_weight` and `L_topo`.
 - 2026-01-16: Fixed test metric aggregation for new pearson metrics and added RUN_DATE/RUN_TIME for consistent run folders.
+- 2026-01-16: Reduced default `lambda_topo` to 1e-3 to avoid loss explosion.
 
 ## In progress
 

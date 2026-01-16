@@ -68,7 +68,7 @@
 
 损失形式（默认启用）：
 - `L_topo = mean_τ[ Huber(β0_pred(τ) - β0_true(τ)) + Huber(β1_pred(τ) - β1_true(τ)) ]`
-- 总损失加权：`L += λ_topo * L_topo`（默认 `λ_topo=0.1`）。
+- 总损失加权：`L += λ_topo * L_topo`（默认 `λ_topo=1e-3`）。
 
 ### 稀疏化训练（预测图）
 

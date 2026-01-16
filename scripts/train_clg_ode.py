@@ -76,7 +76,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--warmup_vel_epochs", type=int, default=20)
     parser.add_argument("--morph_noise_sigma", type=float, default=0.05)
     parser.add_argument("--sc_pos_edge_drop_prob", type=float, default=0.02)
-    parser.add_argument("--lambda_topo", type=float, default=0.1)
+    parser.add_argument("--lambda_topo", type=float, default=1e-3)
     parser.add_argument("--topo_loss_bins", type=int, default=8)
     parser.add_argument("--betti_sharpness", type=float, default=20.0)
     parser.add_argument("--betti_t", type=float, default=10.0)
