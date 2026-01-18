@@ -12,6 +12,8 @@ This repository treats `ARCHITECTURE.md` as the source of truth for the stable l
 5) Log each session in `docs/sessions/` (date-stamped file).
 6) If you modify code or documentation, commit the changes with git (write your own message).
 7) If the `create-plan` skill is used, write the plan to the root `PLAN.md`.
+8) All packages must be installed in a dedicated conda environment for this project; activate via `/GPFS/cuizaixu_lab_permanent/xuhaoshu/miniconda3/bin/activate`.
+9) For deep learning training/inference, use containers (cluster system is too old); follow the current container-based workflow.
 
 ## Scope and constraints
 

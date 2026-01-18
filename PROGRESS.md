@@ -54,6 +54,7 @@
 - 2026-01-16: Removed time limit from full CLG-ODE submit script and logged the latest smoke result.
 - 2026-01-16: Merged CLG-ODE 5-fold results across split runs and documented the analysis in `docs/reports/clg_ode_cv_merge_20260116.md`.
 - 2026-01-16: Computed identity-mapping baseline metrics on the CLG-ODE test split and updated the report comparison.
+- 2026-01-16: Added conda environment + container usage requirements to `AGENTS.md`.
 
 ## In progress
 
