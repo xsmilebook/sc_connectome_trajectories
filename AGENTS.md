@@ -14,6 +14,7 @@ This repository treats `ARCHITECTURE.md` as the source of truth for the stable l
 7) If the `create-plan` skill is used, write the plan to the root `PLAN.md`.
 8) All packages must be installed in a dedicated conda environment for this project; activate via `/GPFS/cuizaixu_lab_permanent/xuhaoshu/miniconda3/bin/activate`.
 9) For deep learning training/inference, use containers (cluster system is too old); follow the current container-based workflow.
+10) Any `sbatch` or long-running container-based training jobs must be submitted by the user; other submissions can be run directly.
 
 ## Scope and constraints
 
