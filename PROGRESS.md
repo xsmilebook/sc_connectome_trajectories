@@ -52,6 +52,7 @@
 - 2026-01-16: Fixed GradNorm crash by ensuring topo sparsification preserves gradients and adding a requires-grad guard.
 - 2026-01-16: Added a smoke submit wrapper and logged smoke outcomes in the model dev log.
 - 2026-01-16: Removed time limit from full CLG-ODE submit script and logged the latest smoke result.
+- 2026-01-16: Merged CLG-ODE 5-fold results across split runs and documented the analysis in `docs/reports/clg_ode_cv_merge_20260116.md`.
 
 ## In progress
 
