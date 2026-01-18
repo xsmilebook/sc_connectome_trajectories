@@ -62,6 +62,7 @@
 - 2026-01-16: Added CLG-ODE residual skip + full log-MSE options and fold0 fast ablation submit scripts.
 - 2026-01-16: Analyzed 10 fold0 fast ablations and updated reports/logs with findings.
 - 2026-01-16: Added residual cap, zero-edge penalty, and residual shrinkage options for further CLG-ODE ablations.
+- 2026-01-16: Added a fold0 fast ablation batch submit helper script.
 
 ## In progress
 

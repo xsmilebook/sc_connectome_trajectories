@@ -210,6 +210,12 @@ sbatch scripts/submit_clg_ode_fast_fold0_c.sh
 sbatch scripts/submit_clg_ode_fast_fold0_d.sh
 ```
 
+一次性批量提交（包含上面 4 个脚本 + 9 个扩展对照）：
+
+```bash
+bash scripts/submit_clg_ode_fast_fold0_batch.sh
+```
+
 可选环境变量（不改脚本也能快速调整）：
 `FOLD_ID=0`，`MAX_EPOCHS=8`，`PATIENCE=3`，`BATCH_SIZE=2`，`TOPO_SCALE_Q=0.9`，`TOPO_WARMUP_FRAC=0.2`，`RUN_TAG=smoke`。
 
