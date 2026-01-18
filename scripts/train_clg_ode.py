@@ -75,6 +75,18 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=0.0,
         help="Weight for full-edge log-domain MSE to align with eval metrics.",
     )
+    parser.add_argument(
+        "--lambda_zero_log",
+        type=float,
+        default=0.0,
+        help="Weight for zero-edge log penalty to suppress false positives.",
+    )
+    parser.add_argument(
+        "--lambda_delta_log",
+        type=float,
+        default=0.0,
+        help="Weight for log-space residual shrinkage toward identity.",
+    )
     parser.add_argument("--lambda_manifold", type=float, default=1.0)
     parser.add_argument("--lambda_vel", type=float, default=0.2)
     parser.add_argument("--lambda_acc", type=float, default=0.1)
@@ -119,6 +131,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
         type=float,
         default=1.0,
         help="Time-scale for residual skip (dt/(dt+tau)).",
+    )
+    parser.add_argument(
+        "--residual_cap",
+        type=float,
+        default=0.5,
+        help="Max magnitude for log-space residual (tanh cap).",
     )
     parser.add_argument(
         "--run_name",
@@ -191,6 +209,8 @@ def main() -> None:
         lambda_kl=args.lambda_kl,
         lambda_weight=args.lambda_weight,
         lambda_full_log_mse=args.lambda_full_log_mse,
+        lambda_zero_log=args.lambda_zero_log,
+        lambda_delta_log=args.lambda_delta_log,
         lambda_manifold=args.lambda_manifold,
         lambda_vel=args.lambda_vel,
         lambda_acc=args.lambda_acc,
@@ -213,6 +233,7 @@ def main() -> None:
         adjacent_pair_prob=args.adjacent_pair_prob,
         residual_skip=args.residual_skip,
         residual_tau=args.residual_tau,
+        residual_cap=args.residual_cap,
         solver_steps=args.solver_steps,
         cv_folds=args.cv_folds,
         cv_fold=None if args.cv_fold < 0 else args.cv_fold,

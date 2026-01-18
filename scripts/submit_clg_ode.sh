@@ -103,8 +103,11 @@ singularity exec --nv \
     ${LAMBDA_VEL:+--lambda_vel "$LAMBDA_VEL"} \
     ${LAMBDA_ACC:+--lambda_acc "$LAMBDA_ACC"} \
     ${LAMBDA_FULL_LOG_MSE:+--lambda_full_log_mse "$LAMBDA_FULL_LOG_MSE"} \
+    ${LAMBDA_ZERO_LOG:+--lambda_zero_log "$LAMBDA_ZERO_LOG"} \
+    ${LAMBDA_DELTA_LOG:+--lambda_delta_log "$LAMBDA_DELTA_LOG"} \
     ${ADJACENT_PAIR_PROB:+--adjacent_pair_prob "$ADJACENT_PAIR_PROB"} \
     ${RESIDUAL_TAU:+--residual_tau "$RESIDUAL_TAU"} \
+    ${RESIDUAL_CAP:+--residual_cap "$RESIDUAL_CAP"} \
     ${SC_POS_EDGE_DROP_PROB:+--sc_pos_edge_drop_prob "$SC_POS_EDGE_DROP_PROB"} \
     ${MORPH_NOISE_SIGMA:+--morph_noise_sigma "$MORPH_NOISE_SIGMA"} \
     ${GRADNORM_SCOPE:+--gradnorm_scope "$GRADNORM_SCOPE"} \
