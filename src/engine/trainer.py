@@ -13,7 +13,17 @@ from torch import nn
 from torch.utils.data import DataLoader
 
 from src.data.dataset import SCDataset, collate_sequences
-from src.data.utils import ensure_dir, compute_triu_indices, list_subject_sequences
+from src.data.morphology import build_morph_index
+from src.data.utils import (
+    compute_triu_indices,
+    ensure_dir,
+    flatten_upper_triangle,
+    list_subject_sequences,
+    load_matrix,
+    parse_subject_session,
+    preprocess_sc,
+)
+from src.engine.sc_metrics import compute_sc_metrics, mean_metrics, vector_to_matrix
 
 
 class Trainer:
@@ -28,6 +38,9 @@ class Trainer:
         patience: int = 10,
         learning_rate: float = 1e-4,
         random_state: int = 42,
+        morph_root: str | None = None,
+        topo_bins: int = 32,
+        max_nodes: int = 400,
     ) -> None:
         self.sc_dir = sc_dir
         self.results_dir = results_dir
@@ -40,12 +53,33 @@ class Trainer:
         self.random_state = random_state
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model_class = model_class
-        self.triu_idx = compute_triu_indices(400)
+        self.triu_idx = compute_triu_indices(max_nodes)
+        self.morph_root = morph_root
+        self.topo_bins = topo_bins
+        self.max_nodes = max_nodes
         self.summary: Dict[str, Any] = {}
 
+    @staticmethod
+    def _scanid_from_path(path: str) -> str:
+        base = os.path.basename(path)
+        sid, ses = parse_subject_session(base)
+        return f"{sid}_{ses}" if ses else sid
+
     def _build_sequences(self) -> List[Tuple[str, List[str]]]:
-        sequences = list_subject_sequences(self.sc_dir)
-        return sequences
+        sequences = list_subject_sequences(self.sc_dir, min_length=1)
+        if not self.morph_root:
+            return sequences
+        morph_index = build_morph_index(self.morph_root)
+        filtered = []
+        for sid, paths in sequences:
+            kept = []
+            for path in paths:
+                scanid = self._scanid_from_path(path)
+                if scanid in morph_index:
+                    kept.append(path)
+            if kept:
+                filtered.append((sid, kept))
+        return filtered
 
     def _split_outer(self, sequences: List[Tuple[str, List[str]]]) -> Tuple[List[int], List[int], List[str]]:
         subjects = [sid for sid, _ in sequences]
@@ -226,29 +260,43 @@ class Trainer:
     def _test_metrics(
         self,
         model: nn.Module,
-        loader: DataLoader,
+        sequences: List[Tuple[str, List[str]]],
+        indices: List[int],
     ) -> Dict[str, float]:
         model.eval()
         all_true: List[np.ndarray] = []
         all_pred: List[np.ndarray] = []
+        sc_metrics_list: List[Dict[str, float]] = []
         with torch.no_grad():
-            for batch in loader:
-                if not batch:
+            for idx in indices:
+                _, paths = sequences[idx]
+                if not paths:
                     continue
-                x = batch["x"].to(self.device)
-                y = batch["y"].to(self.device)
-                mask = batch["mask"].to(self.device)
-                lengths = batch["lengths"].tolist()
-                y_pred = model(x)
-                for i, L in enumerate(lengths):
-                    if L <= 0:
-                        continue
-                    true_last = y[i, L - 1].cpu().numpy()
-                    pred_last = y_pred[i, L - 1].cpu().numpy()
-                    all_true.append(true_last)
-                    all_pred.append(pred_last)
+                a0 = load_matrix(paths[0], max_nodes=self.max_nodes)
+                a0_raw, _ = preprocess_sc(a0)
+                if len(paths) >= 2:
+                    a1 = load_matrix(paths[1], max_nodes=self.max_nodes)
+                    a1_raw, _ = preprocess_sc(a1)
+                else:
+                    a1_raw = a0_raw
+                x0_vec = flatten_upper_triangle(a0_raw, self.triu_idx)
+                x0 = torch.from_numpy(x0_vec).unsqueeze(0).unsqueeze(0).to(self.device)
+                pred_vec = model(x0)[0, 0].detach().cpu().numpy()
+                true_vec = flatten_upper_triangle(a1_raw, self.triu_idx)
+                all_true.append(true_vec)
+                all_pred.append(pred_vec)
+                pred_mat = vector_to_matrix(pred_vec, self.triu_idx, self.max_nodes)
+                true_mat = vector_to_matrix(true_vec, self.triu_idx, self.max_nodes)
+                sc_metrics_list.append(
+                    compute_sc_metrics(
+                        pred_mat,
+                        true_mat,
+                        self.triu_idx,
+                        self.topo_bins,
+                    )
+                )
         if not all_true:
-            return {"mse": float("nan"), "pearson": float("nan")}
+            return {"mse": float("nan"), "pearson": float("nan")}, {}
         true_vec = np.stack(all_true, axis=0).reshape(len(all_true), -1)
         pred_vec = np.stack(all_pred, axis=0).reshape(len(all_pred), -1)
         mse = mean_squared_error(true_vec, pred_vec)
@@ -262,7 +310,7 @@ class Trainer:
             * math.sqrt((pred_flat ** 2).sum() + 1e-8)
         )
         pearson = num / denom if denom > 0 else float("nan")
-        return {"mse": float(mse), "pearson": float(pearson)}
+        return {"mse": float(mse), "pearson": float(pearson)}, mean_metrics(sc_metrics_list)
 
     def run(self) -> None:
         sequences = self._build_sequences()
@@ -270,9 +318,7 @@ class Trainer:
             return
         trainval_indices, test_indices, subjects = self._split_outer(sequences)
         best_model_path = self._train_cv(sequences, trainval_indices, subjects)
-        test_loader = self._build_loader_from_indices(
-            sequences, test_indices, shuffle=False
-        )
+        test_loader = self._build_loader_from_indices(sequences, test_indices, shuffle=False)
         example_batch = next(iter(test_loader))
         feature_dim = example_batch["x"].shape[-1]
         model = self.model_class(
@@ -282,8 +328,9 @@ class Trainer:
         if best_model_path and os.path.exists(best_model_path):
             state = torch.load(best_model_path, map_location=self.device)
             model.load_state_dict(state)
-        test_metrics = self._test_metrics(model, test_loader)
+        test_metrics, sc_metrics = self._test_metrics(model, sequences, test_indices)
         self.summary["test_metrics"] = test_metrics
+        self.summary["test_sc_metrics"] = sc_metrics
         self.summary["n_subjects"] = len(sequences)
         self.summary["n_trainval"] = len(trainval_indices)
         self.summary["n_test"] = len(test_indices)
@@ -308,4 +355,9 @@ class Trainer:
             encoding="utf-8",
         ) as f:
             json.dump(self.summary, f, indent=2)
-
+        with open(
+            os.path.join(self.results_dir, "test_sc_metrics.json"),
+            "w",
+            encoding="utf-8",
+        ) as f:
+            json.dump(sc_metrics, f, indent=2)

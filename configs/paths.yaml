@@ -29,6 +29,8 @@ local:
     results: outputs/results
     figures: outputs/figures
     clg_ode: outputs/results/clg_ode
+    vector_lstm_baseline: outputs/results/vector_lstm_baseline
+    gnn_baseline: outputs/results/gnn_baseline
   containers:
     torch_gnn: data/external/containers/torch_gnn.sif
 

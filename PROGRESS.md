@@ -56,6 +56,7 @@
 - 2026-01-16: Computed identity-mapping baseline metrics on the CLG-ODE test split and updated the report comparison.
 - 2026-01-16: Added conda environment + container usage requirements to `AGENTS.md`.
 - 2026-01-16: Added a user-only submission rule for `sbatch` and long container training jobs in `AGENTS.md`.
+- 2026-01-16: Added VectorLSTM and GNN baselines (scripts, configs, and workflow documentation).
 
 ## In progress
 

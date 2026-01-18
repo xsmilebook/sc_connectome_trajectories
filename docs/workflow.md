@@ -16,7 +16,7 @@
 - FreeSurfer 相关的大体量数据根目录保留为 HPC 上的绝对路径（例如 `/GPFS/.../ABCD/...`），**不要求迁移**。
 - 仓库内可管理的默认路径使用相对路径（`data/raw`、`data/interim`、`data/processed`、`outputs/logs` 等）。
 - Bash 脚本可通过 `python -m scripts.render_paths ...` 读取 `configs/paths.yaml` 并导出环境变量。
-- CLG-ODE 训练与提交脚本使用以下键：`local.data.sc_connectome_schaefer400`、`local.data.morphology`、`local.data.subject_info_sc`、`local.outputs.clg_ode`、`local.containers.torch_gnn`。
+- 训练与提交脚本使用以下键：`local.data.sc_connectome_schaefer400`、`local.data.morphology`、`local.data.subject_info_sc`、`local.outputs.clg_ode`、`local.outputs.vector_lstm_baseline`、`local.outputs.gnn_baseline`、`local.containers.torch_gnn`。
 
 ## Atlas（Schaefer annot）
 
@@ -96,13 +96,37 @@ CLG-ODE 训练需要 `--subject_info_csv`，建议放在 `data/processed/table/s
 
 ## 训练与结果输出
 
-### VectorLSTM baseline
+### VectorLSTM baseline（时序）
+
+本基线使用现有 `VectorLSTM`，按 CLG-ODE 相同的被试划分（random_state=42，20% test），并过滤缺失形态学的扫描。
 
 ```bash
-python -m scripts.train \
-  --sc_dir data/processed/sc_connectome/schaefer400 \
-  --results_dir outputs/results/vector_lstm
+python -m scripts.train_vector_lstm_baseline
 ```
+
+如需提交到集群（由用户提交）：
+
+```bash
+sbatch scripts/submit_vector_lstm_baseline.sh
+```
+
+输出目录：`outputs/results/vector_lstm_baseline/`。
+
+### GNN baseline（图预测）
+
+轻量两层 GCN，节点特征为 `log1p(degree)`，通过内积解码下一时刻 SC。
+
+```bash
+python -m scripts.train_gnn_baseline
+```
+
+如需提交到集群（由用户提交）：
+
+```bash
+sbatch scripts/submit_gnn_baseline.sh
+```
+
+输出目录：`outputs/results/gnn_baseline/`。
 
 ### CLG-ODE
 
