@@ -99,11 +99,34 @@ class ConnDecoder(nn.Module):
         self.delta = nn.Parameter(torch.tensor(0.0))
         self.gamma = nn.Parameter(torch.tensor(1.0))
         self.beta = nn.Parameter(torch.tensor(0.0))
+        self.residual_scale = nn.Parameter(torch.tensor(1.0))
+        self.residual_bias = nn.Parameter(torch.tensor(0.0))
 
-    def forward(self, z: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def forward(
+        self,
+        z: torch.Tensor,
+        a0_log: torch.Tensor | None = None,
+        times: torch.Tensor | None = None,
+        residual_skip: bool = False,
+        residual_tau: float = 1.0,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         score = torch.matmul(z, z.transpose(-1, -2))
         logit = self.alpha * (score - self.delta)
-        weight = F.softplus(self.gamma * score + self.beta)
+        if residual_skip and a0_log is not None and times is not None:
+            delta_log = self.residual_scale * score + self.residual_bias
+            delta_log = torch.tanh(delta_log)
+            if times.dim() == 1:
+                times = times.unsqueeze(0).expand(z.shape[0], -1)
+            scale = times / (times + float(residual_tau))
+            scale = scale.unsqueeze(-1).unsqueeze(-1)
+            if a0_log.dim() == 3 and z.dim() == 4:
+                base = a0_log.unsqueeze(1)
+            else:
+                base = a0_log
+            pred_log = base + scale * delta_log
+            weight = torch.expm1(pred_log)
+        else:
+            weight = F.softplus(self.gamma * score + self.beta)
         weight = weight - torch.diag_embed(torch.diagonal(weight, dim1=-2, dim2=-1))
         return logit, weight
 
@@ -120,11 +143,15 @@ class CLGODE(nn.Module):
         cov_embed_dim: int = 8,
         numeric_cov_dim: int = 0,
         solver_steps: int = 8,
+        residual_skip: bool = False,
+        residual_tau: float = 1.0,
     ) -> None:
         super().__init__()
         self.num_nodes = num_nodes
         self.latent_dim = latent_dim
         self.solver_steps = solver_steps
+        self.residual_skip = residual_skip
+        self.residual_tau = residual_tau
         self.morph_encoder = GraphEncoder(morph_dim, hidden_dim, latent_dim)
         self.conn_encoder = GraphEncoder(morph_dim, hidden_dim, latent_dim)
         self.cov_encoder = CovariateEncoder(
@@ -164,7 +191,13 @@ class CLGODE(nn.Module):
         zt = integrate_latent(self.ode_func, z0, times, cov, self.solver_steps)
         z_morph_t, z_conn_t = torch.chunk(zt, 2, dim=-1)
         x_hat = self.morph_decoder(z_morph_t)
-        a_logit, a_weight = self.conn_decoder(z_conn_t)
+        a_logit, a_weight = self.conn_decoder(
+            z_conn_t,
+            a0_log=a0,
+            times=times,
+            residual_skip=self.residual_skip,
+            residual_tau=self.residual_tau,
+        )
         return CLGOutput(
             x_hat=x_hat,
             a_logit=a_logit,

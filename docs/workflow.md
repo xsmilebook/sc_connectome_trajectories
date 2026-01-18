@@ -162,6 +162,8 @@ python -m scripts.train_clg_ode \
 - 测试评估采用固定的 `t0→t1` 对（避免随机性），ECC 评估时对预测矩阵做 top-k 稀疏化（k 为真实正边数）。
 - 拓扑损失（Betti curve）为实验性增强项，默认启用；细节见 `docs/methods.md`。
 - 训练阶段对预测权重执行 top-k 稀疏化用于 `L_weight` 与 `L_topo`，与真实稀疏结构对齐（见 `docs/methods.md`）。
+- 可选残差跳连：`--residual_skip` 启用 log 空间残差（`log1p(a0) + s(dt)*tanh(delta)`），`s(dt)=dt/(dt+tau)` 由 `--residual_tau` 控制。
+- 可选全边 log-MSE：`--lambda_full_log_mse` 用于对齐 `test_sc_metrics` 的评估口径。
 
 按 fold 拆分提交（单卡替代多卡）：
 
@@ -195,6 +197,14 @@ sbatch scripts/submit_clg_ode.sh
 
 ```bash
 sbatch scripts/submit_clg_ode_smoke.sh
+```
+
+快速对照实验（fold0，用户提交）：
+
+```bash
+sbatch scripts/submit_clg_ode_fast_fold0_a.sh
+sbatch scripts/submit_clg_ode_fast_fold0_b.sh
+sbatch scripts/submit_clg_ode_fast_fold0_c.sh
 ```
 
 可选环境变量（不改脚本也能快速调整）：

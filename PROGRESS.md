@@ -59,6 +59,7 @@
 - 2026-01-16: Added VectorLSTM and GNN baselines (scripts, configs, and workflow documentation).
 - 2026-01-16: Updated baseline submit scripts to use conda python for path rendering.
 - 2026-01-16: Filtered VectorLSTM train/val splits to sequences with >=2 time points to avoid zero-length batches.
+- 2026-01-16: Added CLG-ODE residual skip + full log-MSE options and fold0 fast ablation submit scripts.
 
 ## In progress
 

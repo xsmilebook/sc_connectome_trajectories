@@ -49,10 +49,13 @@ class CLGTrainer:
         random_state: int = 42,
         lambda_kl: float = 0.0,
         lambda_weight: float = 1.0,
+        lambda_full_log_mse: float = 0.0,
         use_s_mean: bool = True,
         topo_bins: int = 32,
         adjacent_pair_prob: float = 0.7,
         solver_steps: int = 8,
+        residual_skip: bool = False,
+        residual_tau: float = 1.0,
         lambda_manifold: float = 1.0,
         lambda_vel: float = 0.1,
         lambda_acc: float = 0.05,
@@ -96,10 +99,13 @@ class CLGTrainer:
         self.random_state = random_state
         self.lambda_kl = lambda_kl
         self.lambda_weight = lambda_weight
+        self.lambda_full_log_mse = float(lambda_full_log_mse)
         self.use_s_mean = use_s_mean
         self.topo_bins = topo_bins
         self.adjacent_pair_prob = adjacent_pair_prob
         self.solver_steps = solver_steps
+        self.residual_skip = bool(residual_skip)
+        self.residual_tau = float(residual_tau)
         self.lambda_manifold = lambda_manifold
         self.lambda_vel = lambda_vel
         self.lambda_acc = lambda_acc
@@ -247,6 +253,8 @@ class CLGTrainer:
             cov_embed_dim=8,
             numeric_cov_dim=self._numeric_cov_dim(),
             solver_steps=self.solver_steps,
+            residual_skip=self.residual_skip,
+            residual_tau=self.residual_tau,
         )
 
     def _compute_norm_stats(self, dataset: CLGDataset, indices: List[int]) -> NormStats:
@@ -546,6 +554,19 @@ class CLGTrainer:
         return loss_x, loss_edge, loss_weight
 
     @staticmethod
+    def _full_log_mse(
+        pred_weight: torch.Tensor,
+        true_raw: torch.Tensor,
+        triu_idx: Tuple[np.ndarray, np.ndarray],
+    ) -> torch.Tensor:
+        pred_log = torch.log1p(torch.clamp(pred_weight, min=0.0))
+        true_log = torch.log1p(torch.clamp(true_raw, min=0.0))
+        pred_vec = pred_log[triu_idx[0], triu_idx[1]]
+        true_vec = true_log[triu_idx[0], triu_idx[1]]
+        diff = pred_vec - true_vec
+        return torch.mean(diff ** 2)
+
+    @staticmethod
     def _pearsonr_torch(x: torch.Tensor, y: torch.Tensor) -> float:
         x = x - x.mean()
         y = y - y.mean()
@@ -839,10 +860,12 @@ class CLGTrainer:
         a_sum = 0.0
         t_sum = 0.0
         t_raw_sum = 0.0
+        f_sum = 0.0
         m_count = 0
         v_count = 0
         a_count = 0
         t_count = 0
+        f_count = 0
         topo_raw_values: List[float] = []
         for batch in loader:
             if not batch:
@@ -858,10 +881,12 @@ class CLGTrainer:
             a_sum += metrics["acc_sum"]
             t_sum += metrics.get("topo_sum", 0.0)
             t_raw_sum += metrics.get("topo_raw_sum", 0.0)
+            f_sum += metrics.get("full_log_sum", 0.0)
             m_count += metrics["manifold_count"]
             v_count += metrics["vel_count"]
             a_count += metrics["acc_count"]
             t_count += metrics.get("topo_count", 0)
+            f_count += metrics.get("full_log_count", 0)
             if self.is_main:
                 raw_vals = metrics.get("topo_raw_values")
                 if raw_vals:
@@ -871,6 +896,7 @@ class CLGTrainer:
         a_sum, a_count = self._reduce_sum_count(a_sum, a_count)
         t_sum, t_count = self._reduce_sum_count(t_sum, t_count)
         t_raw_sum, _ = self._reduce_sum_count(t_raw_sum, t_count)
+        f_sum, f_count = self._reduce_sum_count(f_sum, f_count)
         if self.is_main:
             self._last_epoch_train_metrics = {
                 "manifold": (m_sum / m_count) if m_count > 0 else 0.0,
@@ -878,12 +904,14 @@ class CLGTrainer:
                 "acc": (a_sum / a_count) if a_count > 0 else 0.0,
                 "topo": (t_sum / t_count) if t_count > 0 else 0.0,
                 "topo_raw": (t_raw_sum / t_count) if t_count > 0 else 0.0,
+                "full_log": (f_sum / f_count) if f_count > 0 else 0.0,
             }
             self._last_epoch_train_counts = {
                 "manifold": int(m_count),
                 "vel": int(v_count),
                 "acc": int(a_count),
                 "topo": int(t_count),
+                "full_log": int(f_count),
             }
         if self.is_main:
             self._update_topo_scale(topo_raw_values)
@@ -907,10 +935,12 @@ class CLGTrainer:
         a_sum = 0.0
         t_sum = 0.0
         t_raw_sum = 0.0
+        f_sum = 0.0
         m_count = 0
         v_count = 0
         a_count = 0
         t_count = 0
+        f_count = 0
         with torch.no_grad():
             for batch in loader:
                 if not batch:
@@ -923,15 +953,18 @@ class CLGTrainer:
                 a_sum += metrics["acc_sum"]
                 t_sum += metrics.get("topo_sum", 0.0)
                 t_raw_sum += metrics.get("topo_raw_sum", 0.0)
+                f_sum += metrics.get("full_log_sum", 0.0)
                 m_count += metrics["manifold_count"]
                 v_count += metrics["vel_count"]
                 a_count += metrics["acc_count"]
                 t_count += metrics.get("topo_count", 0)
+                f_count += metrics.get("full_log_count", 0)
         m_sum, m_count = self._reduce_sum_count(m_sum, m_count)
         v_sum, v_count = self._reduce_sum_count(v_sum, v_count)
         a_sum, a_count = self._reduce_sum_count(a_sum, a_count)
         t_sum, t_count = self._reduce_sum_count(t_sum, t_count)
         t_raw_sum, _ = self._reduce_sum_count(t_raw_sum, t_count)
+        f_sum, f_count = self._reduce_sum_count(f_sum, f_count)
         if self.is_main:
             self._last_epoch_val_metrics = {
                 "manifold": (m_sum / m_count) if m_count > 0 else 0.0,
@@ -939,12 +972,14 @@ class CLGTrainer:
                 "acc": (a_sum / a_count) if a_count > 0 else 0.0,
                 "topo": (t_sum / t_count) if t_count > 0 else 0.0,
                 "topo_raw": (t_raw_sum / t_count) if t_count > 0 else 0.0,
+                "full_log": (f_sum / f_count) if f_count > 0 else 0.0,
             }
             self._last_epoch_val_counts = {
                 "manifold": int(m_count),
                 "vel": int(v_count),
                 "acc": int(a_count),
                 "topo": int(t_count),
+                "full_log": int(f_count),
             }
         return self._reduce_loss(total_loss, count)
 
@@ -976,6 +1011,7 @@ class CLGTrainer:
         loss_acc = []
         loss_kl = []
         loss_topo = []
+        loss_full_log = []
 
         for b, length in enumerate(lengths):
             if length >= 3:
@@ -1004,7 +1040,14 @@ class CLGTrainer:
             x_i_noisy = x_i + torch.randn_like(x_i) * float(self.morph_noise_sigma)
 
             a_i_log_clean = a_log[b, i]
-            a_i_log_noisy = self._drop_positive_edges(a_i_log_clean, a_raw[b, i], self.sc_pos_edge_drop_prob)
+            if self.residual_skip:
+                a_i_log_noisy = a_i_log_clean
+            else:
+                a_i_log_noisy = self._drop_positive_edges(
+                    a_i_log_clean,
+                    a_raw[b, i],
+                    self.sc_pos_edge_drop_prob,
+                )
 
             times0 = torch.zeros((1, 1), dtype=torch.float32, device=self.device)
             outputs_i = model(
@@ -1038,6 +1081,10 @@ class CLGTrainer:
                 triu_idx,
             )
             manifold = lx + le + self.lambda_weight * lw
+            if self.lambda_full_log_mse > 0:
+                loss_full_log.append(
+                    self._full_log_mse(outputs_denoise.a_weight[0, 0], a_raw[b, i], triu_idx)
+                )
             topo_loss_i = self._betti_curve_loss(
                 pred_sparse_i,
                 a_raw[b, i],
@@ -1079,6 +1126,10 @@ class CLGTrainer:
                     triu_idx,
                 )
                 manifold = manifold + (lxj + lej + self.lambda_weight * lwj)
+                if self.lambda_full_log_mse > 0:
+                    loss_full_log.append(
+                        self._full_log_mse(outputs_fore.a_weight[0, -1], a_raw[b, j], triu_idx)
+                    )
                 topo_loss_j = self._betti_curve_loss(
                     pred_sparse_j,
                     a_raw[b, j],
@@ -1129,6 +1180,10 @@ class CLGTrainer:
                     triu_idx,
                 )
                 manifold = manifold + 0.5 * (lxk + lek + self.lambda_weight * lwk)
+                if self.lambda_full_log_mse > 0:
+                    loss_full_log.append(
+                        0.5 * self._full_log_mse(outputs_fore_k.a_weight[0, -1], a_raw[b, k], triu_idx)
+                    )
                 topo_loss_k = self._betti_curve_loss(
                     pred_sparse_k,
                     a_raw[b, k],
@@ -1218,18 +1273,28 @@ class CLGTrainer:
             total = total + self.lambda_acc * mean_acc
         if self.lambda_kl > 0:
             total = total + self.lambda_kl * mean_kl
+        mean_full_log = (
+            torch.stack(loss_full_log).mean()
+            if loss_full_log
+            else torch.tensor(0.0, device=self.device)
+        )
+
         if self.lambda_topo > 0:
             total = total + self.lambda_topo * w_topo * topo_warmup * mean_topo
+        if self.lambda_full_log_mse > 0:
+            total = total + self.lambda_full_log_mse * mean_full_log
         metrics = {
             "manifold_sum": float(mean_manifold.detach().item()) * max(len(loss_manifold), 1),
             "vel_sum": float(mean_vel.detach().item()) * max(len(loss_vel), 1),
             "acc_sum": float(mean_acc.detach().item()) * max(len(loss_acc), 1),
             "topo_sum": float(mean_topo.detach().item()) * max(len(loss_topo), 1),
             "topo_raw_sum": float(mean_topo_raw.detach().item()) * max(len(loss_topo), 1),
+            "full_log_sum": float(mean_full_log.detach().item()) * max(len(loss_full_log), 1),
             "manifold_count": int(len(loss_manifold)),
             "vel_count": int(len(loss_vel)),
             "acc_count": int(len(loss_acc)),
             "topo_count": int(len(loss_topo)),
+            "full_log_count": int(len(loss_full_log)),
             "topo_raw_values": topo_raw_values,
         }
         return total, metrics
@@ -1439,15 +1504,19 @@ class CLGTrainer:
                             "train_acc": float(train_m.get("acc", 0.0)),
                             "train_topo": float(train_m.get("topo", 0.0)),
                             "train_topo_raw": float(train_m.get("topo_raw", 0.0)),
+                            "train_full_log": float(train_m.get("full_log", 0.0)),
                             "train_vel_count": int(train_c.get("vel", 0)),
                             "train_acc_count": int(train_c.get("acc", 0)),
+                            "train_full_log_count": int(train_c.get("full_log", 0)),
                             "val_manifold": float(val_m.get("manifold", 0.0)),
                             "val_vel": float(val_m.get("vel", 0.0)),
                             "val_acc": float(val_m.get("acc", 0.0)),
                             "val_topo": float(val_m.get("topo", 0.0)),
                             "val_topo_raw": float(val_m.get("topo_raw", 0.0)),
+                            "val_full_log": float(val_m.get("full_log", 0.0)),
                             "val_vel_count": int(val_c.get("vel", 0)),
                             "val_acc_count": int(val_c.get("acc", 0)),
+                            "val_full_log_count": int(val_c.get("full_log", 0)),
                             "enable_vel": int(epoch >= self.warmup_manifold_epochs),
                             "enable_acc": int(epoch >= self.warmup_vel_epochs),
                             "lambda_manifold": float(self.lambda_manifold),
@@ -1455,6 +1524,7 @@ class CLGTrainer:
                             "lambda_acc": float(self.lambda_acc),
                             "lambda_kl": float(self.lambda_kl),
                             "lambda_topo": float(self.lambda_topo),
+                            "lambda_full_log_mse": float(self.lambda_full_log_mse),
                             "topo_scale": float(self._topo_scale),
                             "topo_scale_quantile": float(self.topo_scale_quantile),
                             "topo_log_compress": int(self.topo_log_compress),
@@ -1471,6 +1541,8 @@ class CLGTrainer:
                             "betti_probes": int(self.betti_probes),
                             "morph_noise_sigma": float(self.morph_noise_sigma),
                             "sc_pos_edge_drop_prob": float(self.sc_pos_edge_drop_prob),
+                            "residual_skip": int(self.residual_skip),
+                            "residual_tau": float(self.residual_tau),
                         }
                     )
                 if val_loss < best_fold_val:

@@ -69,6 +69,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--random_state", type=int, default=42)
     parser.add_argument("--lambda_kl", type=float, default=1e-4)
     parser.add_argument("--lambda_weight", type=float, default=1.0)
+    parser.add_argument(
+        "--lambda_full_log_mse",
+        type=float,
+        default=0.0,
+        help="Weight for full-edge log-domain MSE to align with eval metrics.",
+    )
     parser.add_argument("--lambda_manifold", type=float, default=1.0)
     parser.add_argument("--lambda_vel", type=float, default=0.2)
     parser.add_argument("--lambda_acc", type=float, default=0.1)
@@ -103,6 +109,17 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--topo_bins", type=int, default=32)
     parser.add_argument("--adjacent_pair_prob", type=float, default=0.7)
+    parser.add_argument(
+        "--residual_skip",
+        action="store_true",
+        help="Enable log-space residual skip for SC prediction.",
+    )
+    parser.add_argument(
+        "--residual_tau",
+        type=float,
+        default=1.0,
+        help="Time-scale for residual skip (dt/(dt+tau)).",
+    )
     parser.add_argument(
         "--run_name",
         type=str,
@@ -173,6 +190,7 @@ def main() -> None:
         random_state=args.random_state,
         lambda_kl=args.lambda_kl,
         lambda_weight=args.lambda_weight,
+        lambda_full_log_mse=args.lambda_full_log_mse,
         lambda_manifold=args.lambda_manifold,
         lambda_vel=args.lambda_vel,
         lambda_acc=args.lambda_acc,
@@ -193,6 +211,8 @@ def main() -> None:
         use_s_mean=not args.disable_s_mean,
         topo_bins=args.topo_bins,
         adjacent_pair_prob=args.adjacent_pair_prob,
+        residual_skip=args.residual_skip,
+        residual_tau=args.residual_tau,
         solver_steps=args.solver_steps,
         cv_folds=args.cv_folds,
         cv_fold=None if args.cv_fold < 0 else args.cv_fold,

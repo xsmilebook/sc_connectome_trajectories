@@ -10,12 +10,13 @@ set -euo pipefail
 
 module load singularity
 
-if ! command -v python3 >/dev/null 2>&1; then
-  echo "python3 not found; load a Python 3 module before submitting." >&2
+PYTHON_HOST_BIN="/GPFS/cuizaixu_lab_permanent/xuhaoshu/miniconda3/bin/python"
+if [[ ! -x "$PYTHON_HOST_BIN" ]]; then
+  echo "Conda python not found at $PYTHON_HOST_BIN; check your conda installation." >&2
   exit 1
 fi
 
-render_paths_output="$(python3 -m scripts.render_paths \
+render_paths_output="$("$PYTHON_HOST_BIN" -m scripts.render_paths \
   --set CONTAINER=local.containers.torch_gnn \
         SC_DIR=local.data.sc_connectome_schaefer400 \
         MORPH_ROOT=local.data.morphology \
@@ -35,7 +36,7 @@ fi
 
 PYTHON_BIN="/opt/conda/bin/python"
 TORCHRUN_BIN="/opt/conda/bin/torchrun"
-FOLD_ID="${SLURM_ARRAY_TASK_ID:-}"
+FOLD_ID="${CLG_CV_FOLD:-${SLURM_ARRAY_TASK_ID:-}}"
 RUN_SUFFIX=""
 FOLD_ARGS=()
 if [[ -n "${FOLD_ID}" ]]; then
@@ -60,7 +61,7 @@ else
   RUN_NAME="${RUN_BASE}"
 fi
 
-MASTER_PORT="$(python3 - <<'PY'
+MASTER_PORT="$("$PYTHON_HOST_BIN" - <<'PY'
 import socket
 s = socket.socket()
 s.bind(("", 0))
@@ -90,4 +91,24 @@ singularity exec --nv \
     --subject_info_csv "$SUBJECT_INFO" \
     --results_dir "$RESULTS_DIR" \
     --run_name "$RUN_NAME" \
+    ${LATENT_DIM:+--latent_dim "$LATENT_DIM"} \
+    ${HIDDEN_DIM:+--hidden_dim "$HIDDEN_DIM"} \
+    ${BATCH_SIZE:+--batch_size "$BATCH_SIZE"} \
+    ${MAX_EPOCHS:+--max_epochs "$MAX_EPOCHS"} \
+    ${PATIENCE:+--patience "$PATIENCE"} \
+    ${LEARNING_RATE:+--learning_rate "$LEARNING_RATE"} \
+    ${SOLVER_STEPS:+--solver_steps "$SOLVER_STEPS"} \
+    ${LAMBDA_KL:+--lambda_kl "$LAMBDA_KL"} \
+    ${LAMBDA_TOPO:+--lambda_topo "$LAMBDA_TOPO"} \
+    ${LAMBDA_VEL:+--lambda_vel "$LAMBDA_VEL"} \
+    ${LAMBDA_ACC:+--lambda_acc "$LAMBDA_ACC"} \
+    ${LAMBDA_FULL_LOG_MSE:+--lambda_full_log_mse "$LAMBDA_FULL_LOG_MSE"} \
+    ${ADJACENT_PAIR_PROB:+--adjacent_pair_prob "$ADJACENT_PAIR_PROB"} \
+    ${RESIDUAL_TAU:+--residual_tau "$RESIDUAL_TAU"} \
+    ${SC_POS_EDGE_DROP_PROB:+--sc_pos_edge_drop_prob "$SC_POS_EDGE_DROP_PROB"} \
+    ${MORPH_NOISE_SIGMA:+--morph_noise_sigma "$MORPH_NOISE_SIGMA"} \
+    ${GRADNORM_SCOPE:+--gradnorm_scope "$GRADNORM_SCOPE"} \
+    ${DISABLE_S_MEAN:+--disable_s_mean} \
+    ${DISABLE_TOPO_LOG_COMPRESS:+--disable_topo_log_compress} \
+    ${RESIDUAL_SKIP:+--residual_skip} \
     "${FOLD_ARGS[@]}"
