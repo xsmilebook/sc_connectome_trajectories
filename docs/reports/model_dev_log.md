@@ -23,3 +23,11 @@
 - topo 量级：train_topo_raw=3.414e7，train_topo=1.202，topo_scale=1.770e7
 - GradNorm：w_m=0.10，w_t=2.00，warmup=1.0
 - 结论：拓扑压缩与 GradNorm 稳定，loss 量级正常，可进入完整训练。
+
+### Fold0 快速对照（10 组，残差跳连 + log-MSE）
+
+- 运行目录：`outputs/results/clg_ode/runs/clg_ode_fast_residual_a/b/c`、`clg_fast_tau*`、`clg_fast_lmse*`、`clg_fast_nores_lmse01`、`clg_fast_dim48`
+- 共同设置：fold0、`adjacent_pair_prob=1.0`、禁用 topo/KL/vel/acc、短时训练（≤6h 目标）
+- 最优（按 `sc_log_mse`）：`clg_fast_lmse015`，`sc_log_mse=0.127624`，`sc_log_pearson=0.864544`
+- 对比 identity baseline：`sc_log_mse=0.126836`、`sc_log_pearson=0.864430`，快速对照仍未超越
+- 观察：`residual_tau` 与 `lambda_full_log_mse` 在该设置下影响极小；关闭 residual 的对照并未明显劣化
