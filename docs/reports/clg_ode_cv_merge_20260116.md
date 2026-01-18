@@ -32,6 +32,21 @@
 | ecc_l2 | 644864.64 | 8488.58 | 635654.94 | 657024.47 |
 | ecc_pearson | 0.983966 | 0.000123 | 0.983826 | 0.984155 |
 
+## Identity mapping baseline（测试集）
+
+定义：使用基线结构连接矩阵（t0）直接作为预测，目标为后续时间点（t1）；若仅有单次扫描，则按 t0→t0 计算。测试集划分与 CLG-ODE 一致（random_state=42，20% subject split），并与训练相同地过滤缺失形态学的扫描。
+
+| metric | identity_baseline | clg_ode_5fold_mean |
+|---|---|---|
+| sc_log_mse | 0.126836 | 2.010224 |
+| sc_log_mae | 0.101258 | 1.375185 |
+| sc_log_pearson | 0.864430 | 0.164181 |
+| sc_log_pearson_pos | 0.822734 | 0.145176 |
+| sc_log_pearson_topk | 0.574224 | 0.076000 |
+| sc_log_pearson_sparse | 0.560635 | 0.088175 |
+| ecc_l2 | 10929.32 | 644864.64 |
+| ecc_pearson | 0.998740 | 0.983966 |
+
 ## 结果解读
 
 - `test_loss` 的跨 fold 波动极小（std 4.6e-4），表明整体训练/泛化稳定性较高。
@@ -40,6 +55,7 @@
 - `sc_log_pearson_topk` 与 `sc_log_pearson_sparse` 略高于全量相关，符合稀疏化后相关性更稳定的预期。
 - `ecc_pearson` 非常稳定（约 0.984），但 `ecc_l2` 存在一定方差，说明整体拓扑相似度一致，幅值尺度仍有轻微分歧。
 - fold4 在 `sc_log_mse` 与相关指标上略差，且对应 `best_val_loss` 较高，建议后续关注该划分的训练/数据分布差异。
+- identity mapping baseline 在全部 SC 指标和 ECC 指标上显著优于当前 CLG-ODE 均值，提示模型预测尚未超过简单的“基线即预测”基线，需要进一步优化模型或损失权重配置。
 
 ## 结论
 
