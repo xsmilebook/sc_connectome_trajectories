@@ -13,12 +13,13 @@ module load singularity
 
 mkdir -p /ibmgpfs/cuizaixu_lab/xuhaoshu/projects/sc_connectome_trajectories/outputs/logs/vector_lstm_baseline
 
-if ! command -v python3 >/dev/null 2>&1; then
-  echo "python3 not found; load a Python 3 module before submitting." >&2
+PYTHON_HOST_BIN="/GPFS/cuizaixu_lab_permanent/xuhaoshu/miniconda3/bin/python"
+if [[ ! -x "$PYTHON_HOST_BIN" ]]; then
+  echo "Conda python not found at $PYTHON_HOST_BIN; check your conda installation." >&2
   exit 1
 fi
 
-render_paths_output="$(python3 -m scripts.render_paths \
+render_paths_output="$("$PYTHON_HOST_BIN" -m scripts.render_paths \
   --set CONTAINER=local.containers.torch_gnn \
         SC_DIR=local.data.sc_connectome_schaefer400 \
         MORPH_ROOT=local.data.morphology \
