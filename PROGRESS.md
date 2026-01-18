@@ -58,6 +58,7 @@
 - 2026-01-16: Added a user-only submission rule for `sbatch` and long container training jobs in `AGENTS.md`.
 - 2026-01-16: Added VectorLSTM and GNN baselines (scripts, configs, and workflow documentation).
 - 2026-01-16: Updated baseline submit scripts to use conda python for path rendering.
+- 2026-01-16: Filtered VectorLSTM train/val splits to sequences with >=2 time points to avoid zero-length batches.
 
 ## In progress
 

@@ -101,6 +101,10 @@ class Trainer:
         train_indices: List[int],
         val_indices: List[int],
     ) -> Tuple[DataLoader, DataLoader]:
+        train_indices = [i for i in train_indices if len(sequences[i][1]) >= 2]
+        val_indices = [i for i in val_indices if len(sequences[i][1]) >= 2]
+        if not train_indices or not val_indices:
+            raise ValueError("No sequences with at least two time points for train/val splits.")
         train_seqs = [sequences[i] for i in train_indices]
         val_seqs = [sequences[i] for i in val_indices]
         train_ds = SCDataset(train_seqs, self.triu_idx)
