@@ -31,3 +31,10 @@
 - 最优（按 `sc_log_mse`）：`clg_fast_lmse015`，`sc_log_mse=0.127624`，`sc_log_pearson=0.864544`
 - 对比 identity baseline：`sc_log_mse=0.126836`、`sc_log_pearson=0.864430`，快速对照仍未超越
 - 观察：`residual_tau` 与 `lambda_full_log_mse` 在该设置下影响极小；关闭 residual 的对照并未明显劣化
+
+### Fold0 扩展批量（残差约束 + 零边抑制）
+
+- 运行目录：`outputs/results/clg_ode/runs/clg_rescap*` 与 `clg_ode_fast_residual_d`
+- 关键改动：`residual_cap`、`lambda_zero_log`、`lambda_delta_log`
+- 最优（按 `sc_log_mse`）：`clg_rescap02_z005_d01`，`sc_log_mse=0.127269`，`sc_log_pearson=0.864486`
+- 结论：指标有小幅改善但仍未超过 identity baseline（0.126836），残差约束与零边抑制未带来质变提升

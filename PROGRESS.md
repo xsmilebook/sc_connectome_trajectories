@@ -63,6 +63,7 @@
 - 2026-01-16: Analyzed 10 fold0 fast ablations and updated reports/logs with findings.
 - 2026-01-16: Added residual cap, zero-edge penalty, and residual shrinkage options for further CLG-ODE ablations.
 - 2026-01-16: Added a fold0 fast ablation batch submit helper script.
+- 2026-01-16: Analyzed expanded fold0 ablations (residual cap + zero-log penalties) and updated reports.
 
 ## In progress
 
