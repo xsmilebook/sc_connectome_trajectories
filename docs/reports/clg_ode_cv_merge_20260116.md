@@ -104,6 +104,12 @@
 - 在该快速配置下，`residual_tau` 与 `lambda_full_log_mse` 的变化对指标影响极小；关闭 residual（`clg_fast_nores_lmse01`）并未明显劣于残差版本，说明当前残差实现仍未形成可分辨优势。
 - 扩展批量中，加入 `residual_cap`、`lambda_zero_log`、`lambda_delta_log` 后 `sc_log_mse` 最低为 `0.127269`（`clg_rescap02_z005_d01`），仍未超过 identity baseline。
 
+## Baseline 训练状态整理（VectorLSTM / GNN）
+
+- VectorLSTM baseline：当前未生成结果文件（`outputs/results/vector_lstm_baseline/` 为空）。最新任务 `13701784` 因超时被 Slurm 终止。
+- GNN baseline：当前未生成结果文件（`outputs/results/gnn_baseline/` 为空）。最新任务 `13701785` 因超时被 Slurm 终止。
+- 结论：两类 baseline 需要缩短训练或延长时限后重新运行，才能与 identity/CLG-ODE 进行量化对比。
+
 ## 后续优化方向（面向超越 identity）
 
 1) 强化 identity 跳连：改为显式 `pred_log = log1p(a0) + s(dt) * delta`，并限制 `delta` 的尺度（例如 `tanh`+较小常数）；必要时加入 “直接复制 a0” 的混合权重。

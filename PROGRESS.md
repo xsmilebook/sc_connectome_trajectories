@@ -64,6 +64,7 @@
 - 2026-01-16: Added residual cap, zero-edge penalty, and residual shrinkage options for further CLG-ODE ablations.
 - 2026-01-16: Added a fold0 fast ablation batch submit helper script.
 - 2026-01-16: Analyzed expanded fold0 ablations (residual cap + zero-log penalties) and updated reports.
+- 2026-01-16: Noted VectorLSTM/GNN baseline jobs timed out without results and documented status.
 
 ## In progress
 

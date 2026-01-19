@@ -38,3 +38,8 @@
 - 关键改动：`residual_cap`、`lambda_zero_log`、`lambda_delta_log`
 - 最优（按 `sc_log_mse`）：`clg_rescap02_z005_d01`，`sc_log_mse=0.127269`，`sc_log_pearson=0.864486`
 - 结论：指标有小幅改善但仍未超过 identity baseline（0.126836），残差约束与零边抑制未带来质变提升
+
+### Baseline 训练状态（VectorLSTM / GNN）
+
+- VectorLSTM baseline：作业 `13701784` 超时退出，尚未生成 `outputs/results/vector_lstm_baseline/` 结果。
+- GNN baseline：作业 `13701785` 超时退出，尚未生成 `outputs/results/gnn_baseline/` 结果。
