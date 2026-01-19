@@ -13,6 +13,7 @@
 - `docs/reports/implementation_specification.md`: CLG-ODE 方法学最终规范（锁定；实现以此为准）。
 - `docs/reports/clg_ode_dataset_tiers.md`: CLG-ODE 训练数据的 Tier 1/2/3 可用性统计（严格文件存在性口径）。
 - `docs/reports/clg_ode_cv_merge_20260116.md`: CLG-ODE 5-fold 结果合并与分析（2026-01-16）。
+- `docs/reports/baseline_lstm_gnn_20260119.md`: VectorLSTM 与 GNN baseline 结果汇总（2026-01-19）。
 
 ## sessions 与 notes
 

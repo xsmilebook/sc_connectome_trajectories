@@ -67,6 +67,7 @@
 - 2026-01-16: Noted VectorLSTM/GNN baseline jobs timed out without results and documented status.
 - 2026-01-16: Removed sbatch time limits and added CLG-ODE resume support with a continue script.
 - 2026-01-16: Updated VectorLSTM/GNN baseline submission to run per-fold array jobs.
+- 2026-01-16: Summarized VectorLSTM/GNN baseline five-fold results and documented the report.
 
 ## In progress
 
