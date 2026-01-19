@@ -152,6 +152,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Train a single CV fold (0-based). Use -1 to run all folds.",
     )
     parser.add_argument(
+        "--resume_from",
+        type=str,
+        default="",
+        help="Optional checkpoint path to resume a single fold training.",
+    )
+    parser.add_argument(
         "--disable_s_mean",
         action="store_true",
         help="Disable the default s_mean strength covariate.",
@@ -237,6 +243,7 @@ def main() -> None:
         solver_steps=args.solver_steps,
         cv_folds=args.cv_folds,
         cv_fold=None if args.cv_fold < 0 else args.cv_fold,
+        resume_from=args.resume_from.strip() or None,
         rank=rank,
         world_size=world_size,
         local_rank=local_rank,

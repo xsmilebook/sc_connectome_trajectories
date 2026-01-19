@@ -84,6 +84,7 @@ class CLGTrainer:
         gradnorm_weight_max: float = 10.0,
         cv_folds: int = 5,
         cv_fold: int | None = None,
+        resume_from: str | None = None,
         rank: int = 0,
         world_size: int = 1,
         local_rank: int = 0,
@@ -141,6 +142,7 @@ class CLGTrainer:
         self.gradnorm_weight_max = float(gradnorm_weight_max)
         self.cv_folds = cv_folds
         self.cv_fold = cv_fold
+        self.resume_from = resume_from
         self.rank = rank
         self.world_size = world_size
         self.local_rank = local_rank
@@ -1557,6 +1559,17 @@ class CLGTrainer:
                     device_ids=[self.local_rank] if torch.cuda.is_available() else None,
                     find_unused_parameters=True,
                 )
+            if self.resume_from:
+                if self.cv_fold is None:
+                    raise ValueError("resume_from requires --cv_fold to target a single fold.")
+                if os.path.exists(self.resume_from):
+                    state = torch.load(self.resume_from, map_location=self.device)
+                    if self.is_distributed and dist.is_initialized():
+                        model.module.load_state_dict(state)
+                    else:
+                        model.load_state_dict(state)
+                else:
+                    raise FileNotFoundError(f"resume_from not found: {self.resume_from}")
             optimizer = torch.optim.Adam(model.parameters(), lr=self.learning_rate)
             best_fold_val = math.inf
             best_state = None

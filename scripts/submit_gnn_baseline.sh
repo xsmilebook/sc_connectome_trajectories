@@ -2,7 +2,6 @@
 #SBATCH -J gnn_baseline
 #SBATCH -p q_ai8
 #SBATCH --gres=gpu:1
-#SBATCH -t 06:00:00
 #SBATCH -D /ibmgpfs/cuizaixu_lab/xuhaoshu/projects/sc_connectome_trajectories
 #SBATCH -o /ibmgpfs/cuizaixu_lab/xuhaoshu/projects/sc_connectome_trajectories/outputs/logs/gnn_baseline/%j.out
 #SBATCH -e /ibmgpfs/cuizaixu_lab/xuhaoshu/projects/sc_connectome_trajectories/outputs/logs/gnn_baseline/%j.err

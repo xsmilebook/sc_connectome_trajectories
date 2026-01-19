@@ -192,6 +192,13 @@ python -m scripts.train_clg_ode \
 sbatch scripts/submit_clg_ode.sh
 ```
 
+继续训练（单折，需提供 checkpoint 路径）：
+
+```bash
+RESUME_FROM="outputs/results/clg_ode/runs/<run>/fold0/clg_ode_fold0_best.pt" \
+  sbatch scripts/submit_clg_ode_continue_fold0.sh
+```
+
 该脚本默认优先使用 `q_ai8`，若不可用再回落到 `q_ai4`，并通过 `torchrun` 启动单卡训练（自动选择 `master_port` 避免端口冲突）。可按需调整 `#SBATCH --gres`。
 提交前请确保日志目录存在：`mkdir -p outputs/logs/clg_ode`。
 

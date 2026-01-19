@@ -108,6 +108,7 @@ singularity exec --nv \
     ${ADJACENT_PAIR_PROB:+--adjacent_pair_prob "$ADJACENT_PAIR_PROB"} \
     ${RESIDUAL_TAU:+--residual_tau "$RESIDUAL_TAU"} \
     ${RESIDUAL_CAP:+--residual_cap "$RESIDUAL_CAP"} \
+    ${RESUME_FROM:+--resume_from "$RESUME_FROM"} \
     ${SC_POS_EDGE_DROP_PROB:+--sc_pos_edge_drop_prob "$SC_POS_EDGE_DROP_PROB"} \
     ${MORPH_NOISE_SIGMA:+--morph_noise_sigma "$MORPH_NOISE_SIGMA"} \
     ${GRADNORM_SCOPE:+--gradnorm_scope "$GRADNORM_SCOPE"} \
