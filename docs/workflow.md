@@ -110,7 +110,7 @@ python -m scripts.train_vector_lstm_baseline
 sbatch scripts/submit_vector_lstm_baseline.sh
 ```
 
-输出目录：`outputs/results/vector_lstm_baseline/`。
+输出目录：`outputs/results/vector_lstm_baseline/runs/<run>/fold{0..4}/`。
 
 ### GNN baseline（图预测）
 
@@ -126,7 +126,7 @@ python -m scripts.train_gnn_baseline
 sbatch scripts/submit_gnn_baseline.sh
 ```
 
-输出目录：`outputs/results/gnn_baseline/`。
+输出目录：`outputs/results/gnn_baseline/runs/<run>/fold{0..4}/`。
 
 ### CLG-ODE
 

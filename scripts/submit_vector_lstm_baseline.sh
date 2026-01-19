@@ -2,9 +2,10 @@
 #SBATCH -J vector_lstm_baseline
 #SBATCH -p q_ai8
 #SBATCH --gres=gpu:1
+#SBATCH --array=0-4
 #SBATCH -D /ibmgpfs/cuizaixu_lab/xuhaoshu/projects/sc_connectome_trajectories
-#SBATCH -o /ibmgpfs/cuizaixu_lab/xuhaoshu/projects/sc_connectome_trajectories/outputs/logs/vector_lstm_baseline/%j.out
-#SBATCH -e /ibmgpfs/cuizaixu_lab/xuhaoshu/projects/sc_connectome_trajectories/outputs/logs/vector_lstm_baseline/%j.err
+#SBATCH -o /ibmgpfs/cuizaixu_lab/xuhaoshu/projects/sc_connectome_trajectories/outputs/logs/vector_lstm_baseline/%A_%a.out
+#SBATCH -e /ibmgpfs/cuizaixu_lab/xuhaoshu/projects/sc_connectome_trajectories/outputs/logs/vector_lstm_baseline/%A_%a.err
 
 set -euo pipefail
 
@@ -36,6 +37,20 @@ if [[ -z "${CONTAINER:-}" || -z "${SC_DIR:-}" || -z "${MORPH_ROOT:-}" || -z "${R
 fi
 
 PYTHON_BIN="/opt/conda/bin/python"
+FOLD_ID="${SLURM_ARRAY_TASK_ID:-0}"
+JOB_ID="${SLURM_JOB_ID:-0}"
+ARRAY_JOB_ID="${SLURM_ARRAY_JOB_ID:-$JOB_ID}"
+TS_DATE="${RUN_DATE:-}"
+if [[ -z "${TS_DATE}" ]]; then
+  TS_DATE="$(date +%Y%m%d)"
+fi
+TS_TIME="${RUN_TIME:-}"
+if [[ -z "${TS_TIME}" ]]; then
+  TS_TIME="$(date +%H%M%S)"
+fi
+TS="${TS_DATE}_${TS_TIME}"
+RUN_BASE="${RUN_BASE:-vector_lstm_${TS}_job${ARRAY_JOB_ID}}"
+RUN_NAME="${RUN_BASE}/fold${FOLD_ID}"
 MAX_EPOCHS="${MAX_EPOCHS:-80}"
 PATIENCE="${PATIENCE:-10}"
 BATCH_SIZE="${BATCH_SIZE:-4}"
@@ -53,6 +68,9 @@ singularity exec --nv \
     --sc_dir "$SC_DIR" \
     --morph_root "$MORPH_ROOT" \
     --results_dir "$RESULTS_DIR" \
+    --run_name "$RUN_NAME" \
+    --cv_folds 5 \
+    --cv_fold "$FOLD_ID" \
     --latent_dim "$LATENT_DIM" \
     --batch_size "$BATCH_SIZE" \
     --max_epochs "$MAX_EPOCHS" \

@@ -41,6 +41,8 @@ class Trainer:
         morph_root: str | None = None,
         topo_bins: int = 32,
         max_nodes: int = 400,
+        cv_folds: int = 5,
+        cv_fold: int | None = None,
     ) -> None:
         self.sc_dir = sc_dir
         self.results_dir = results_dir
@@ -57,6 +59,8 @@ class Trainer:
         self.morph_root = morph_root
         self.topo_bins = topo_bins
         self.max_nodes = max_nodes
+        self.cv_folds = cv_folds
+        self.cv_fold = cv_fold
         self.summary: Dict[str, Any] = {}
 
     @staticmethod
@@ -190,11 +194,17 @@ class Trainer:
     ) -> str:
         groups = np.array([subjects[i] for i in trainval_indices])
         indices = np.array(trainval_indices)
-        gkf = GroupKFold(n_splits=5)
+        if self.cv_folds < 2:
+            raise ValueError("cv_folds must be >= 2")
+        if self.cv_fold is not None and not (0 <= self.cv_fold < self.cv_folds):
+            raise ValueError(f"cv_fold must be in [0, {self.cv_folds - 1}]")
+        gkf = GroupKFold(n_splits=self.cv_folds)
         best_val = math.inf
         best_model_path = ""
         fold_results = []
         for fold_idx, (train_idx_rel, val_idx_rel) in enumerate(gkf.split(indices, groups=groups)):
+            if self.cv_fold is not None and fold_idx != self.cv_fold:
+                continue
             train_idx = indices[train_idx_rel].tolist()
             val_idx = indices[val_idx_rel].tolist()
             train_loader, val_loader = self._get_loaders_for_indices(sequences, train_idx, val_idx)
@@ -208,12 +218,15 @@ class Trainer:
             best_fold_val = math.inf
             best_state = None
             epochs_no_improve = 0
-            print(f"Starting fold {fold_idx + 1}/5 with {len(train_idx)} train subjects and {len(val_idx)} val subjects")
+            print(
+                f"Starting fold {fold_idx + 1}/{self.cv_folds} "
+                f"with {len(train_idx)} train subjects and {len(val_idx)} val subjects"
+            )
             for epoch in range(self.max_epochs):
                 train_loss = self._train_one_epoch(model, train_loader, optimizer)
                 val_loss = self._evaluate(model, val_loader)
                 print(
-                    f"Fold {fold_idx + 1}/5, epoch {epoch + 1}/{self.max_epochs}, "
+                    f"Fold {fold_idx + 1}/{self.cv_folds}, epoch {epoch + 1}/{self.max_epochs}, "
                     f"train_loss={train_loss:.4f}, val_loss={val_loss:.4f}"
                 )
                 if val_loss < best_fold_val:
@@ -224,7 +237,7 @@ class Trainer:
                     epochs_no_improve += 1
                 if epochs_no_improve >= self.patience:
                     print(
-                        f"Fold {fold_idx + 1}/5 early stopped at epoch {epoch + 1} "
+                        f"Fold {fold_idx + 1}/{self.cv_folds} early stopped at epoch {epoch + 1} "
                         f"with best_val_loss={best_fold_val:.4f}"
                     )
                     break

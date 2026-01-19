@@ -76,6 +76,8 @@ class GNNTrainer:
         random_state: int = 42,
         topo_bins: int = 32,
         max_nodes: int = 400,
+        cv_folds: int = 5,
+        cv_fold: int | None = None,
     ) -> None:
         self.sc_dir = sc_dir
         self.morph_root = morph_root
@@ -94,6 +96,8 @@ class GNNTrainer:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.summary: Dict[str, float | int | Dict[str, float] | List[Dict[str, float]]] = {}
         self.model: nn.Module | None = None
+        self.cv_folds = cv_folds
+        self.cv_fold = cv_fold
 
     @staticmethod
     def _scanid_from_path(path: str) -> str:
@@ -200,11 +204,17 @@ class GNNTrainer:
     ) -> str:
         groups = np.array([subjects[i] for i in trainval_indices])
         indices = np.array(trainval_indices)
-        gkf = GroupKFold(n_splits=5)
+        if self.cv_folds < 2:
+            raise ValueError("cv_folds must be >= 2")
+        if self.cv_fold is not None and not (0 <= self.cv_fold < self.cv_folds):
+            raise ValueError(f"cv_fold must be in [0, {self.cv_folds - 1}]")
+        gkf = GroupKFold(n_splits=self.cv_folds)
         best_val = math.inf
         best_state = None
         fold_results = []
         for fold_idx, (train_idx_rel, val_idx_rel) in enumerate(gkf.split(indices, groups=groups)):
+            if self.cv_fold is not None and fold_idx != self.cv_fold:
+                continue
             train_idx = indices[train_idx_rel].tolist()
             val_idx = indices[val_idx_rel].tolist()
             train_pairs = self._pairs_for_sequences(sequences, train_idx, include_singleton=False)
@@ -226,12 +236,15 @@ class GNNTrainer:
             best_fold_val = math.inf
             best_fold_state = None
             epochs_no_improve = 0
-            print(f"GNN fold {fold_idx + 1}/5: {len(train_pairs)} train pairs, {len(val_pairs)} val pairs")
+            print(
+                f"GNN fold {fold_idx + 1}/{self.cv_folds}: "
+                f"{len(train_pairs)} train pairs, {len(val_pairs)} val pairs"
+            )
             for epoch in range(self.max_epochs):
                 train_loss = self._train_one_epoch(model, train_loader, optimizer)
                 val_loss = self._evaluate(model, val_loader)
                 print(
-                    f"GNN fold {fold_idx + 1}/5, epoch {epoch + 1}/{self.max_epochs}, "
+                    f"GNN fold {fold_idx + 1}/{self.cv_folds}, epoch {epoch + 1}/{self.max_epochs}, "
                     f"train_loss={train_loss:.4f}, val_loss={val_loss:.4f}"
                 )
                 if val_loss < best_fold_val:
@@ -242,7 +255,7 @@ class GNNTrainer:
                     epochs_no_improve += 1
                 if epochs_no_improve >= self.patience:
                     print(
-                        f"GNN fold {fold_idx + 1}/5 early stopped at epoch {epoch + 1} "
+                        f"GNN fold {fold_idx + 1}/{self.cv_folds} early stopped at epoch {epoch + 1} "
                         f"with best_val_loss={best_fold_val:.4f}"
                     )
                     break
