@@ -258,6 +258,8 @@ sbatch scripts/submit_clg_ode_mask_fold0_d.sh
 bash scripts/submit_clg_ode_mask_fold0_batch.sh
 ```
 
+对应结果解读见：`docs/reports/clg_ode_mask_fold0_20260119.md`。
+
 可选环境变量（不改脚本也能快速调整）：
 `FOLD_ID=0`，`MAX_EPOCHS=8`，`PATIENCE=3`，`BATCH_SIZE=2`，`TOPO_SCALE_Q=0.9`，`TOPO_WARMUP_FRAC=0.2`，`RUN_TAG=smoke`。
 
