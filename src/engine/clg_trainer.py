@@ -90,6 +90,9 @@ class CLGTrainer:
         cv_folds: int = 5,
         cv_fold: int | None = None,
         resume_from: str | None = None,
+        early_stop_metric: str = "val_loss",
+        early_stop_density_weight: float = 0.0,
+        val_sc_eval_every: int = 0,
         rank: int = 0,
         world_size: int = 1,
         local_rank: int = 0,
@@ -153,6 +156,9 @@ class CLGTrainer:
         self.cv_folds = cv_folds
         self.cv_fold = cv_fold
         self.resume_from = resume_from
+        self.early_stop_metric = str(early_stop_metric).strip()
+        self.early_stop_density_weight = float(early_stop_density_weight)
+        self.val_sc_eval_every = int(val_sc_eval_every)
         self.rank = rank
         self.world_size = world_size
         self.local_rank = local_rank
@@ -169,6 +175,40 @@ class CLGTrainer:
         self._topo_scale = 1.0
         self._gradnorm_weights = {"manifold": 1.0, "topo": 1.0}
         self._gradnorm_init_losses: Dict[str, torch.Tensor] = {}
+
+    def _monitor_requires_sc(self) -> bool:
+        return self.early_stop_metric in {
+            "val_sc_log_mse",
+            "val_sc_log_pearson_topk",
+            "val_sc_log_pearson_sparse",
+            "monitor_mse_plus_density",
+        }
+
+    def _monitor_higher_is_better(self) -> bool:
+        return self.early_stop_metric in {
+            "val_sc_log_pearson_topk",
+            "val_sc_log_pearson_sparse",
+        }
+
+    def _compute_monitor_value(
+        self,
+        val_loss: float,
+        val_sc_metrics: Dict[str, float],
+        val_density: float,
+    ) -> float:
+        metric = self.early_stop_metric
+        if metric == "val_loss":
+            return float(val_loss)
+        if metric == "val_sc_log_mse":
+            return float(val_sc_metrics.get("sc_log_mse", math.inf))
+        if metric == "val_sc_log_pearson_topk":
+            return float(val_sc_metrics.get("sc_log_pearson_topk", 0.0))
+        if metric == "val_sc_log_pearson_sparse":
+            return float(val_sc_metrics.get("sc_log_pearson_sparse", 0.0))
+        if metric == "monitor_mse_plus_density":
+            mse = float(val_sc_metrics.get("sc_log_mse", math.inf))
+            return mse + float(self.early_stop_density_weight) * float(val_density)
+        raise ValueError(f"Unsupported early_stop_metric: {metric}")
 
     def _build_dataset(self) -> CLGDataset:
         return CLGDataset(
@@ -1601,7 +1641,7 @@ class CLGTrainer:
             raise ValueError(f"cv_fold must be in [0, {n_splits - 1}]")
         gkf = GroupKFold(n_splits=n_splits)
         triu_idx = compute_triu_indices(dataset.max_nodes)
-        best_val = math.inf
+        best_score = math.inf
         best_model_path = ""
         best_stats: NormStats | None = None
         fold_results = []
@@ -1654,6 +1694,8 @@ class CLGTrainer:
                     raise FileNotFoundError(f"resume_from not found: {self.resume_from}")
             optimizer = torch.optim.Adam(model.parameters(), lr=self.learning_rate)
             best_fold_val = math.inf
+            higher_is_better = self._monitor_higher_is_better()
+            best_monitor = -math.inf if higher_is_better else math.inf
             best_state = None
             epochs_no_improve = 0
             if self.is_main:
@@ -1684,10 +1726,28 @@ class CLGTrainer:
                     volume_indices,
                     epoch,
                 )
+                if val_loss < best_fold_val:
+                    best_fold_val = val_loss
+
+                val_sc_metrics: Dict[str, float] = {}
+                compute_sc = self._monitor_requires_sc() or (
+                    self.val_sc_eval_every > 0 and ((epoch + 1) % self.val_sc_eval_every == 0)
+                )
+                if compute_sc:
+                    val_sc_metrics = self._evaluate_sc_metrics(
+                        model,
+                        val_loader,
+                        triu_idx,
+                        stats,
+                        volume_indices,
+                    )
+                val_density = float(getattr(self, "_last_epoch_val_metrics", {}).get("density", 0.0))
+                monitor_value = self._compute_monitor_value(val_loss, val_sc_metrics, val_density)
                 if self.is_main:
                     print(
                         f"Fold {fold_idx + 1}/{n_splits}, epoch {epoch + 1}/{self.max_epochs}, "
-                        f"train_loss={train_loss:.4f}, val_loss={val_loss:.4f}"
+                        f"train_loss={train_loss:.4f}, val_loss={val_loss:.4f}, "
+                        f"monitor({self.early_stop_metric})={monitor_value:.6f}"
                     )
                     train_m = getattr(self, "_last_epoch_train_metrics", {})
                     val_m = getattr(self, "_last_epoch_val_metrics", {})
@@ -1709,6 +1769,8 @@ class CLGTrainer:
                             "epoch": epoch + 1,
                             "train_loss": float(train_loss),
                             "val_loss": float(val_loss),
+                            "monitor_metric": self.early_stop_metric,
+                            "monitor_value": float(monitor_value),
                             "train_manifold": float(train_m.get("manifold", 0.0)),
                             "train_vel": float(train_m.get("vel", 0.0)),
                             "train_acc": float(train_m.get("acc", 0.0)),
@@ -1775,10 +1837,23 @@ class CLGTrainer:
                             "residual_skip": int(self.residual_skip),
                             "residual_tau": float(self.residual_tau),
                             "residual_cap": float(self.residual_cap),
+                            "val_sc_eval_every": int(self.val_sc_eval_every),
+                            "early_stop_metric": self.early_stop_metric,
+                            "early_stop_density_weight": float(self.early_stop_density_weight),
+                            "val_sc_log_mse": float(val_sc_metrics.get("sc_log_mse", 0.0)),
+                            "val_sc_log_mae": float(val_sc_metrics.get("sc_log_mae", 0.0)),
+                            "val_sc_log_pearson": float(val_sc_metrics.get("sc_log_pearson", 0.0)),
+                            "val_sc_log_pearson_pos": float(val_sc_metrics.get("sc_log_pearson_pos", 0.0)),
+                            "val_sc_log_pearson_topk": float(val_sc_metrics.get("sc_log_pearson_topk", 0.0)),
+                            "val_sc_log_pearson_sparse": float(val_sc_metrics.get("sc_log_pearson_sparse", 0.0)),
+                            "val_ecc_l2": float(val_sc_metrics.get("ecc_l2", 0.0)),
+                            "val_ecc_pearson": float(val_sc_metrics.get("ecc_pearson", 0.0)),
                         }
                     )
-                if val_loss < best_fold_val:
-                    best_fold_val = val_loss
+
+                improved = (monitor_value > best_monitor) if higher_is_better else (monitor_value < best_monitor)
+                if improved:
+                    best_monitor = monitor_value
                     if self.is_distributed and dist.is_initialized():
                         best_state = model.module.state_dict()
                     else:
@@ -1790,25 +1865,33 @@ class CLGTrainer:
                     if self.is_main:
                         print(
                             f"Fold {fold_idx + 1}/{n_splits} early stopped at epoch {epoch + 1} "
-                            f"with best_val_loss={best_fold_val:.4f}"
+                            f"with best_monitor({self.early_stop_metric})={best_monitor:.6f}"
                         )
                     break
-            fold_results.append({"fold": fold_idx, "best_val_loss": float(best_fold_val)})
+            fold_results.append(
+                {
+                    "fold": fold_idx,
+                    "best_val_loss": float(best_fold_val),
+                    "best_monitor_metric": self.early_stop_metric,
+                    "best_monitor": float(best_monitor),
+                }
+            )
             fold_model_path = os.path.join(
                 self.results_dir,
                 f"clg_ode_fold{fold_idx}_best.pt",
             )
             if best_state is not None and self.is_main:
                 torch.save(best_state, fold_model_path)
-            if best_fold_val < best_val:
-                best_val = best_fold_val
+            fold_score = -best_monitor if higher_is_better else best_monitor
+            if fold_score < best_score:
+                best_score = fold_score
                 best_model_path = fold_model_path
                 best_stats = stats
         if self.is_main:
             self.summary["cv_folds"] = fold_results
             self.summary["cv_fold"] = self.cv_fold
             self.summary["cv_folds_total"] = n_splits
-            self.summary["best_val_loss"] = float(best_val)
+            self.summary["best_cv_score"] = float(best_score)
             self.summary["best_model_path"] = best_model_path
         if best_stats is None:
             raise RuntimeError("No training folds produced a model.")

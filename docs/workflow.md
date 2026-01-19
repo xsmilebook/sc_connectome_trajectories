@@ -260,6 +260,25 @@ bash scripts/submit_clg_ode_mask_fold0_batch.sh
 
 对应结果解读见：`docs/reports/clg_ode_mask_fold0_20260119.md`。
 
+## density 收敛性实验（10 个任务）
+
+目标：让 `lambda_density` 这条线**可收敛**（更长训练、更温和、更对齐 early stopping 指标），避免“刚起效一点就被 early stop 掐断”。
+
+批量提交（10 个实验，用户执行）：
+
+```bash
+bash scripts/submit_clg_ode_density_10exp_batch.sh
+```
+
+内容：
+
+- 8 组网格：`DENSITY_WARMUP_EPOCHS ∈ {2,5}` × `LAMBDA_DENSITY ∈ {0.002,0.005,0.01,0.02}`，固定 `MAX_EPOCHS=100`、`PATIENCE=25`，并将 early stop 监控改为 `val_sc_log_pearson_sparse`（需要每 epoch 计算 val SC 指标）。
+- 2 组两阶段训练（Phase-1 → Phase-2）：先学主任务，再用更小学习率微调并打开 density/zero 约束；Phase-2 分别用 `val_sc_log_pearson_sparse` 和 `monitor_mse_plus_density` 作为 early stop 监控。
+
+注意：
+
+- `scripts/submit_clg_ode_density_twostage_fold0_{a,b}.sh` 会提交两个作业并用 `--dependency=afterok` 串联；Phase-2 使用 Phase-1 的 `clg_ode_fold0_best.pt` 作为 `RESUME_FROM`。
+
 可选环境变量（不改脚本也能快速调整）：
 `FOLD_ID=0`，`MAX_EPOCHS=8`，`PATIENCE=3`，`BATCH_SIZE=2`，`TOPO_SCALE_Q=0.9`，`TOPO_WARMUP_FRAC=0.2`，`RUN_TAG=smoke`。
 

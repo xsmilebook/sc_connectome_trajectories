@@ -117,6 +117,9 @@ singularity exec --nv \
     ${SC_POS_EDGE_DROP_PROB:+--sc_pos_edge_drop_prob "$SC_POS_EDGE_DROP_PROB"} \
     ${MORPH_NOISE_SIGMA:+--morph_noise_sigma "$MORPH_NOISE_SIGMA"} \
     ${GRADNORM_SCOPE:+--gradnorm_scope "$GRADNORM_SCOPE"} \
+    ${EARLY_STOP_METRIC:+--early_stop_metric "$EARLY_STOP_METRIC"} \
+    ${EARLY_STOP_DENSITY_WEIGHT:+--early_stop_density_weight "$EARLY_STOP_DENSITY_WEIGHT"} \
+    ${VAL_SC_EVAL_EVERY:+--val_sc_eval_every "$VAL_SC_EVAL_EVERY"} \
     ${DISABLE_S_MEAN:+--disable_s_mean} \
     ${DISABLE_TOPO_LOG_COMPRESS:+--disable_topo_log_compress} \
     ${RESIDUAL_SKIP:+--residual_skip} \

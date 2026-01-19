@@ -193,6 +193,31 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Disable the default s_mean strength covariate.",
     )
     parser.add_argument("--solver_steps", type=int, default=12)
+    parser.add_argument(
+        "--early_stop_metric",
+        type=str,
+        default="val_loss",
+        choices=[
+            "val_loss",
+            "val_sc_log_mse",
+            "val_sc_log_pearson_topk",
+            "val_sc_log_pearson_sparse",
+            "monitor_mse_plus_density",
+        ],
+        help="Early stopping monitor metric. Non-loss options require computing val SC metrics.",
+    )
+    parser.add_argument(
+        "--early_stop_density_weight",
+        type=float,
+        default=0.0,
+        help="Weight for density term in monitor_mse_plus_density.",
+    )
+    parser.add_argument(
+        "--val_sc_eval_every",
+        type=int,
+        default=0,
+        help="Compute val SC metrics every N epochs (0 disables). Required for early_stop_metric based on SC metrics.",
+    )
     return parser
 
 
@@ -279,6 +304,9 @@ def main() -> None:
         cv_folds=args.cv_folds,
         cv_fold=None if args.cv_fold < 0 else args.cv_fold,
         resume_from=args.resume_from.strip() or None,
+        early_stop_metric=args.early_stop_metric,
+        early_stop_density_weight=args.early_stop_density_weight,
+        val_sc_eval_every=args.val_sc_eval_every,
         rank=rank,
         world_size=world_size,
         local_rank=local_rank,

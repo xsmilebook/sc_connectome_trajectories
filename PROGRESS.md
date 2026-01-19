@@ -73,6 +73,7 @@
 - 2026-01-19: Updated CLG-ODE SC prediction to use masked expected weight (`A_pred = sigmoid(a_logit) * a_weight`) for weight/topology/metrics; added optional density constraint and warmup/ramp CLI flags.
 - 2026-01-19: Added fold0 submit scripts to test mask alignment and constraints (`scripts/submit_clg_ode_mask_fold0_*.sh` + batch wrapper).
 - 2026-01-19: Ran and summarized the fold0 mask/density/zero ablations; documented metrics and next-step suggestions in `docs/reports/clg_ode_mask_fold0_20260119.md`.
+- 2026-01-19: Added early stopping monitors based on validation SC sparse/top-k metrics and a 10-experiment density convergence submit set (`scripts/submit_clg_ode_density_10exp_batch.sh`).
 
 ## In progress
 

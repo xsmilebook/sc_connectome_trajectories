@@ -1,0 +1,16 @@
+#!/bin/bash
+
+set -euo pipefail
+
+sbatch scripts/submit_clg_ode_density_fold0_w2_ld002.sh
+sbatch scripts/submit_clg_ode_density_fold0_w2_ld005.sh
+sbatch scripts/submit_clg_ode_density_fold0_w2_ld01.sh
+sbatch scripts/submit_clg_ode_density_fold0_w2_ld02.sh
+sbatch scripts/submit_clg_ode_density_fold0_w5_ld002.sh
+sbatch scripts/submit_clg_ode_density_fold0_w5_ld005.sh
+sbatch scripts/submit_clg_ode_density_fold0_w5_ld01.sh
+sbatch scripts/submit_clg_ode_density_fold0_w5_ld02.sh
+
+bash scripts/submit_clg_ode_density_twostage_fold0_a.sh
+bash scripts/submit_clg_ode_density_twostage_fold0_b.sh
+
