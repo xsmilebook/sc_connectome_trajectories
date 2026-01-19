@@ -104,7 +104,12 @@ singularity exec --nv \
     ${LAMBDA_ACC:+--lambda_acc "$LAMBDA_ACC"} \
     ${LAMBDA_FULL_LOG_MSE:+--lambda_full_log_mse "$LAMBDA_FULL_LOG_MSE"} \
     ${LAMBDA_ZERO_LOG:+--lambda_zero_log "$LAMBDA_ZERO_LOG"} \
+    ${ZERO_LOG_WARMUP_EPOCHS:+--zero_log_warmup_epochs "$ZERO_LOG_WARMUP_EPOCHS"} \
+    ${ZERO_LOG_RAMP_EPOCHS:+--zero_log_ramp_epochs "$ZERO_LOG_RAMP_EPOCHS"} \
     ${LAMBDA_DELTA_LOG:+--lambda_delta_log "$LAMBDA_DELTA_LOG"} \
+    ${LAMBDA_DENSITY:+--lambda_density "$LAMBDA_DENSITY"} \
+    ${DENSITY_WARMUP_EPOCHS:+--density_warmup_epochs "$DENSITY_WARMUP_EPOCHS"} \
+    ${DENSITY_RAMP_EPOCHS:+--density_ramp_epochs "$DENSITY_RAMP_EPOCHS"} \
     ${ADJACENT_PAIR_PROB:+--adjacent_pair_prob "$ADJACENT_PAIR_PROB"} \
     ${RESIDUAL_TAU:+--residual_tau "$RESIDUAL_TAU"} \
     ${RESIDUAL_CAP:+--residual_cap "$RESIDUAL_CAP"} \

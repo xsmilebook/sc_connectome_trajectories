@@ -19,7 +19,7 @@
 
 ### 2) CLG-ODE（Coupled Latent Graph Neural ODE）
 
-代码：`src/models/clg_ode.py`，训练入口：`scripts/train_clg_ode.py`（推荐 `python -m scripts.train_clg_ode`），训练器：`src/engine/clg_trainer.py`。
+代码：`src/models/clg_ode.py`，训练入口：`scripts/train_clg_ode.py`（深度学习训练请通过容器 + Slurm 提交，见 `docs/workflow.md`；不建议在宿主机直接运行），训练器：`src/engine/clg_trainer.py`。
 
 高层结构：
 
@@ -37,6 +37,7 @@
   - 形态学：按 (ROI, metric) 列做训练集统计量的 Z-score 后，对 `x_hat` 与真实 `x` 计算 MSE。
   - 连接：为避免零边主导，使用两项式损失：存在性加权 BCE（pos:neg=5:1）+ 正边权重的 log 域 Huber；`L = L_edge + λ_w * L_weight`（默认 `λ_w=1.0`；上三角计算避免冗余）。
   - 连接输出共享同一个内积分数 `s_ij=z_i^T z_j`，存在性与强度分别通过可学习标定得到：`p_ij=σ(α(s_ij-δ))`，`ŵ_ij=softplus(γ s_ij+β)`（默认初始化 `α=10, δ=0, γ=1, β=0`）。
+  - 训练与评估统一使用“带 soft mask 的期望权重”作为最终 SC 预测：`A_pred = p_hat * ŵ`。其中 `L_edge` 仍仅监督 `p_hat`（BCE），`L_weight/L_topo/SC 指标/零边抑制` 以 `A_pred` 为输入（避免 `ŵ>0` 导致的 dense 伪阳性）。
 - KL 正则：对潜变量分布的 KL divergence（权重 `lambda_kl`）。
 - 拓扑（实验性增强，**本实现已偏离锁定规范**）：在原“拓扑仅作 conditioning/评估”的基础上，增加 Betti curve 的拓扑一致性损失，用于突出连通分量与环结构的可解释性（见下节）。
 - Tiered 训练目标（按每个被试可用时间点数自动触发）：
@@ -76,11 +77,11 @@
 
 ### 稀疏化训练（预测图）
 
-鉴于真实 SC 为硬稀疏，本实现对**预测权重**执行 top-k 稀疏化（k 取真实正边数），并用于：
-- 权重回归项（`L_weight`）与拓扑损失（`L_topo`）。
+鉴于真实 SC 为硬稀疏，本实现对**预测的期望权重** `A_pred` 执行 top-k 稀疏化（k 取真实正边数），并用于：
+- 权重回归项（`L_weight`）与拓扑损失（`L_topo`）（对齐稀疏评估口径）。
 - 边存在性 BCE 仍使用 dense logit 以保留负边监督。
 
-注意：该稀疏化仅用于 loss 计算与拓扑约束，输出的 `a_logit`/`a_weight` 仍为 dense，可通过评估时的 `top-k` 指标进行对齐比较。
+注意：该稀疏化仅用于 loss 计算与拓扑约束，模型仍会输出 dense 的 `a_logit`/`a_weight`；最终用于评估/落盘的预测矩阵应使用 `A_pred = sigmoid(a_logit) * a_weight`（必要时再做 top-k）。
 
 ## 训练与评估口径
 

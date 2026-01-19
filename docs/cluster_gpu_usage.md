@@ -145,6 +145,8 @@ singularity exec --nv \
 
 ### 6.3 本仓库示例（CLG-ODE）
 
+注意：深度学习训练（含 CLG-ODE）必须在容器内运行；不要在宿主机上尝试安装/运行 PyTorch（系统版本过旧，易失败且不可复现）。
+
 本仓库推荐使用模块化入口（避免相对路径与环境差异）：
 
 ```bash
@@ -158,6 +160,8 @@ singularity exec --nv \
     --subject_info_csv data/processed/table/subject_info_sc.csv \
     --results_dir outputs/results/clg_ode
 ```
+
+更推荐直接使用仓库提供的提交脚本（由用户 `sbatch` 提交）：`scripts/submit_clg_ode.sh`。
 
 提示（日志目录）：
 

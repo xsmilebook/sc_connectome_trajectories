@@ -58,22 +58,18 @@ python -m scripts.export_morphology_tables \
 
 ## Model training
 
-Vector LSTM baseline:
+Important: Deep learning training/inference is not supported on the host OS (PyTorch cannot be reliably installed on the cluster nodes). Run training inside the project container and submit via Slurm (`sbatch`).
+
+Vector LSTM baseline (user-submitted):
 
 ```bash
-python -m scripts.train \
-  --sc_dir /path/to/sc_connectome/schaefer400 \
-  --results_dir /path/to/results
+sbatch scripts/submit_vector_lstm_baseline.sh
 ```
 
-CLG-ODE:
+CLG-ODE (user-submitted):
 
 ```bash
-python -m scripts.train_clg_ode \
-  --sc_dir /path/to/sc_connectome/schaefer400 \
-  --morph_root /path/to/morphology \
-  --subject_info_csv /path/to/subject_info_sc.csv \
-  --results_dir /path/to/results
+sbatch scripts/submit_clg_ode.sh
 ```
 
 Notes:

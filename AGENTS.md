@@ -13,8 +13,9 @@ This repository treats `ARCHITECTURE.md` as the source of truth for the stable l
 6) If you modify code or documentation, commit the changes with git (write your own message).
 7) If the `create-plan` skill is used, write the plan to the root `PLAN.md`.
 8) All packages must be installed in a dedicated conda environment for this project; activate via `/GPFS/cuizaixu_lab_permanent/xuhaoshu/miniconda3/bin/activate`.
-9) For deep learning training/inference, use containers (cluster system is too old); follow the current container-based workflow.
-10) Any `sbatch` or long-running container-based training jobs must be submitted by the user; other submissions can be run directly.
+9) Do not run deep learning training/inference on the host system (the OS/toolchain is too old and cannot reliably install PyTorch).
+10) For deep learning training/inference, always use the container-based workflow documented in `docs/workflow.md` and `docs/cluster_gpu_usage.md` (Slurm + Singularity/Apptainer; no on-node env mutation).
+11) Any `sbatch` submission or long-running container-based training job must be submitted by the user (the agent may only draft commands/scripts).
 
 ## Scope and constraints
 

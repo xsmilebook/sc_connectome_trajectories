@@ -51,7 +51,12 @@ class CLGTrainer:
         lambda_weight: float = 1.0,
         lambda_full_log_mse: float = 0.0,
         lambda_zero_log: float = 0.0,
+        zero_log_warmup_epochs: int = 0,
+        zero_log_ramp_epochs: int = 0,
         lambda_delta_log: float = 0.0,
+        lambda_density: float = 0.0,
+        density_warmup_epochs: int = 0,
+        density_ramp_epochs: int = 0,
         use_s_mean: bool = True,
         topo_bins: int = 32,
         adjacent_pair_prob: float = 0.7,
@@ -105,7 +110,12 @@ class CLGTrainer:
         self.lambda_weight = lambda_weight
         self.lambda_full_log_mse = float(lambda_full_log_mse)
         self.lambda_zero_log = float(lambda_zero_log)
+        self.zero_log_warmup_epochs = int(zero_log_warmup_epochs)
+        self.zero_log_ramp_epochs = int(zero_log_ramp_epochs)
         self.lambda_delta_log = float(lambda_delta_log)
+        self.lambda_density = float(lambda_density)
+        self.density_warmup_epochs = int(density_warmup_epochs)
+        self.density_ramp_epochs = int(density_ramp_epochs)
         self.use_s_mean = use_s_mean
         self.topo_bins = topo_bins
         self.adjacent_pair_prob = adjacent_pair_prob
@@ -563,6 +573,35 @@ class CLGTrainer:
         return loss_x, loss_edge, loss_weight
 
     @staticmethod
+    def _expected_weight(a_logit: torch.Tensor, a_weight: torch.Tensor) -> torch.Tensor:
+        return torch.sigmoid(a_logit) * torch.clamp(a_weight, min=0.0)
+
+    @staticmethod
+    def _linear_warmup_factor(epoch: int, warmup_epochs: int, ramp_epochs: int) -> float:
+        if warmup_epochs <= 0 and ramp_epochs <= 0:
+            return 1.0
+        if epoch < warmup_epochs:
+            return 0.0
+        if ramp_epochs <= 0:
+            return 1.0
+        return float(min(1.0, (epoch - warmup_epochs + 1) / float(ramp_epochs)))
+
+    @staticmethod
+    def _density_loss(
+        p_hat: torch.Tensor,
+        true_raw: torch.Tensor,
+        triu_idx: Tuple[np.ndarray, np.ndarray],
+    ) -> torch.Tensor:
+        p_vec = p_hat[triu_idx[0], triu_idx[1]]
+        true_vec = true_raw[triu_idx[0], triu_idx[1]]
+        k = (true_vec > 0).sum()
+        if int(k.item()) <= 0:
+            return torch.tensor(0.0, device=p_hat.device)
+        sum_p = p_vec.sum()
+        rel = (sum_p - k.to(dtype=sum_p.dtype)) / k.to(dtype=sum_p.dtype)
+        return rel ** 2
+
+    @staticmethod
     def _full_log_mse(
         pred_weight: torch.Tensor,
         true_raw: torch.Tensor,
@@ -898,6 +937,7 @@ class CLGTrainer:
         f_sum = 0.0
         z_sum = 0.0
         d_sum = 0.0
+        den_sum = 0.0
         m_count = 0
         v_count = 0
         a_count = 0
@@ -905,6 +945,7 @@ class CLGTrainer:
         f_count = 0
         z_count = 0
         d_count = 0
+        den_count = 0
         topo_raw_values: List[float] = []
         for batch in loader:
             if not batch:
@@ -923,6 +964,7 @@ class CLGTrainer:
             f_sum += metrics.get("full_log_sum", 0.0)
             z_sum += metrics.get("zero_log_sum", 0.0)
             d_sum += metrics.get("delta_log_sum", 0.0)
+            den_sum += metrics.get("density_sum", 0.0)
             m_count += metrics["manifold_count"]
             v_count += metrics["vel_count"]
             a_count += metrics["acc_count"]
@@ -930,6 +972,7 @@ class CLGTrainer:
             f_count += metrics.get("full_log_count", 0)
             z_count += metrics.get("zero_log_count", 0)
             d_count += metrics.get("delta_log_count", 0)
+            den_count += metrics.get("density_count", 0)
             if self.is_main:
                 raw_vals = metrics.get("topo_raw_values")
                 if raw_vals:
@@ -942,6 +985,7 @@ class CLGTrainer:
         f_sum, f_count = self._reduce_sum_count(f_sum, f_count)
         z_sum, z_count = self._reduce_sum_count(z_sum, z_count)
         d_sum, d_count = self._reduce_sum_count(d_sum, d_count)
+        den_sum, den_count = self._reduce_sum_count(den_sum, den_count)
         if self.is_main:
             self._last_epoch_train_metrics = {
                 "manifold": (m_sum / m_count) if m_count > 0 else 0.0,
@@ -952,6 +996,7 @@ class CLGTrainer:
                 "full_log": (f_sum / f_count) if f_count > 0 else 0.0,
                 "zero_log": (z_sum / z_count) if z_count > 0 else 0.0,
                 "delta_log": (d_sum / d_count) if d_count > 0 else 0.0,
+                "density": (den_sum / den_count) if den_count > 0 else 0.0,
             }
             self._last_epoch_train_counts = {
                 "manifold": int(m_count),
@@ -961,6 +1006,7 @@ class CLGTrainer:
                 "full_log": int(f_count),
                 "zero_log": int(z_count),
                 "delta_log": int(d_count),
+                "density": int(den_count),
             }
         if self.is_main:
             self._update_topo_scale(topo_raw_values)
@@ -987,6 +1033,7 @@ class CLGTrainer:
         f_sum = 0.0
         z_sum = 0.0
         d_sum = 0.0
+        den_sum = 0.0
         m_count = 0
         v_count = 0
         a_count = 0
@@ -994,6 +1041,7 @@ class CLGTrainer:
         f_count = 0
         z_count = 0
         d_count = 0
+        den_count = 0
         with torch.no_grad():
             for batch in loader:
                 if not batch:
@@ -1009,6 +1057,7 @@ class CLGTrainer:
                 f_sum += metrics.get("full_log_sum", 0.0)
                 z_sum += metrics.get("zero_log_sum", 0.0)
                 d_sum += metrics.get("delta_log_sum", 0.0)
+                den_sum += metrics.get("density_sum", 0.0)
                 m_count += metrics["manifold_count"]
                 v_count += metrics["vel_count"]
                 a_count += metrics["acc_count"]
@@ -1016,6 +1065,7 @@ class CLGTrainer:
                 f_count += metrics.get("full_log_count", 0)
                 z_count += metrics.get("zero_log_count", 0)
                 d_count += metrics.get("delta_log_count", 0)
+                den_count += metrics.get("density_count", 0)
         m_sum, m_count = self._reduce_sum_count(m_sum, m_count)
         v_sum, v_count = self._reduce_sum_count(v_sum, v_count)
         a_sum, a_count = self._reduce_sum_count(a_sum, a_count)
@@ -1024,6 +1074,7 @@ class CLGTrainer:
         f_sum, f_count = self._reduce_sum_count(f_sum, f_count)
         z_sum, z_count = self._reduce_sum_count(z_sum, z_count)
         d_sum, d_count = self._reduce_sum_count(d_sum, d_count)
+        den_sum, den_count = self._reduce_sum_count(den_sum, den_count)
         if self.is_main:
             self._last_epoch_val_metrics = {
                 "manifold": (m_sum / m_count) if m_count > 0 else 0.0,
@@ -1034,6 +1085,7 @@ class CLGTrainer:
                 "full_log": (f_sum / f_count) if f_count > 0 else 0.0,
                 "zero_log": (z_sum / z_count) if z_count > 0 else 0.0,
                 "delta_log": (d_sum / d_count) if d_count > 0 else 0.0,
+                "density": (den_sum / den_count) if den_count > 0 else 0.0,
             }
             self._last_epoch_val_counts = {
                 "manifold": int(m_count),
@@ -1043,6 +1095,7 @@ class CLGTrainer:
                 "full_log": int(f_count),
                 "zero_log": int(z_count),
                 "delta_log": int(d_count),
+                "density": int(den_count),
             }
         return self._reduce_loss(total_loss, count)
 
@@ -1068,6 +1121,16 @@ class CLGTrainer:
 
         enable_vel = epoch >= self.warmup_manifold_epochs
         enable_acc = epoch >= self.warmup_vel_epochs
+        density_factor = self._linear_warmup_factor(
+            epoch,
+            warmup_epochs=self.density_warmup_epochs,
+            ramp_epochs=self.density_ramp_epochs,
+        )
+        zero_log_factor = self._linear_warmup_factor(
+            epoch,
+            warmup_epochs=self.zero_log_warmup_epochs,
+            ramp_epochs=self.zero_log_ramp_epochs,
+        )
 
         loss_manifold = []
         loss_vel = []
@@ -1077,6 +1140,7 @@ class CLGTrainer:
         loss_full_log = []
         loss_zero_log = []
         loss_delta_log = []
+        loss_density = []
 
         for b, length in enumerate(lengths):
             if length >= 3:
@@ -1136,7 +1200,8 @@ class CLGTrainer:
                 cov,
                 use_mu=True,
             )
-            pred_sparse_i, _ = self._sparsify_pred(outputs_denoise.a_weight[0, 0], a_raw[b, i], triu_idx)
+            a_pred_i = self._expected_weight(outputs_denoise.a_logit[0, 0], outputs_denoise.a_weight[0, 0])
+            pred_sparse_i, _ = self._sparsify_pred(a_pred_i, a_raw[b, i], triu_idx)
             lx, le, lw = self._recon_losses(
                 outputs_denoise.a_logit[:, 0],
                 pred_sparse_i.unsqueeze(0),
@@ -1148,16 +1213,18 @@ class CLGTrainer:
             manifold = lx + le + self.lambda_weight * lw
             if self.lambda_full_log_mse > 0:
                 loss_full_log.append(
-                    self._full_log_mse(outputs_denoise.a_weight[0, 0], a_raw[b, i], triu_idx)
+                    self._full_log_mse(a_pred_i, a_raw[b, i], triu_idx)
                 )
-            if self.lambda_zero_log > 0:
+            if self.lambda_zero_log > 0 and zero_log_factor > 0:
                 loss_zero_log.append(
-                    self._zero_log_penalty(outputs_denoise.a_weight[0, 0], a_raw[b, i], triu_idx)
+                    self._zero_log_penalty(a_pred_i, a_raw[b, i], triu_idx)
                 )
             if self.lambda_delta_log > 0:
                 loss_delta_log.append(
-                    self._delta_log_penalty(outputs_denoise.a_weight[0, 0], a_i_log_clean, triu_idx)
+                    self._delta_log_penalty(a_pred_i, a_i_log_clean, triu_idx)
                 )
+            if self.lambda_density > 0 and density_factor > 0:
+                loss_density.append(self._density_loss(torch.sigmoid(outputs_denoise.a_logit[0, 0]), a_raw[b, i], triu_idx))
             topo_loss_i = self._betti_curve_loss(
                 pred_sparse_i,
                 a_raw[b, i],
@@ -1185,7 +1252,8 @@ class CLGTrainer:
                     cov,
                     use_mu=True,
                 )
-                pred_sparse_j, _ = self._sparsify_pred(outputs_fore.a_weight[0, -1], a_raw[b, j], triu_idx)
+                a_pred_j = self._expected_weight(outputs_fore.a_logit[0, -1], outputs_fore.a_weight[0, -1])
+                pred_sparse_j, _ = self._sparsify_pred(a_pred_j, a_raw[b, j], triu_idx)
                 lxj, lej, lwj = self._recon_losses(
                     outputs_fore.a_logit[:, -1],
                     pred_sparse_j.unsqueeze(0),
@@ -1201,16 +1269,18 @@ class CLGTrainer:
                 manifold = manifold + (lxj + lej + self.lambda_weight * lwj)
                 if self.lambda_full_log_mse > 0:
                     loss_full_log.append(
-                        self._full_log_mse(outputs_fore.a_weight[0, -1], a_raw[b, j], triu_idx)
+                        self._full_log_mse(a_pred_j, a_raw[b, j], triu_idx)
                     )
-                if self.lambda_zero_log > 0:
+                if self.lambda_zero_log > 0 and zero_log_factor > 0:
                     loss_zero_log.append(
-                        self._zero_log_penalty(outputs_fore.a_weight[0, -1], a_raw[b, j], triu_idx)
+                        self._zero_log_penalty(a_pred_j, a_raw[b, j], triu_idx)
                     )
                 if self.lambda_delta_log > 0:
                     loss_delta_log.append(
-                        self._delta_log_penalty(outputs_fore.a_weight[0, -1], a_i_log_clean, triu_idx)
+                        self._delta_log_penalty(a_pred_j, a_i_log_clean, triu_idx)
                     )
+                if self.lambda_density > 0 and density_factor > 0:
+                    loss_density.append(self._density_loss(torch.sigmoid(outputs_fore.a_logit[0, -1]), a_raw[b, j], triu_idx))
                 topo_loss_j = self._betti_curve_loss(
                     pred_sparse_j,
                     a_raw[b, j],
@@ -1247,7 +1317,8 @@ class CLGTrainer:
                     cov,
                     use_mu=True,
                 )
-                pred_sparse_k, _ = self._sparsify_pred(outputs_fore_k.a_weight[0, -1], a_raw[b, k], triu_idx)
+                a_pred_k = self._expected_weight(outputs_fore_k.a_logit[0, -1], outputs_fore_k.a_weight[0, -1])
+                pred_sparse_k, _ = self._sparsify_pred(a_pred_k, a_raw[b, k], triu_idx)
                 lxk, lek, lwk = self._recon_losses(
                     outputs_fore_k.a_logit[:, -1],
                     pred_sparse_k.unsqueeze(0),
@@ -1263,16 +1334,18 @@ class CLGTrainer:
                 manifold = manifold + 0.5 * (lxk + lek + self.lambda_weight * lwk)
                 if self.lambda_full_log_mse > 0:
                     loss_full_log.append(
-                        0.5 * self._full_log_mse(outputs_fore_k.a_weight[0, -1], a_raw[b, k], triu_idx)
+                        0.5 * self._full_log_mse(a_pred_k, a_raw[b, k], triu_idx)
                     )
-                if self.lambda_zero_log > 0:
+                if self.lambda_zero_log > 0 and zero_log_factor > 0:
                     loss_zero_log.append(
-                        0.5 * self._zero_log_penalty(outputs_fore_k.a_weight[0, -1], a_raw[b, k], triu_idx)
+                        0.5 * self._zero_log_penalty(a_pred_k, a_raw[b, k], triu_idx)
                     )
                 if self.lambda_delta_log > 0:
                     loss_delta_log.append(
-                        0.5 * self._delta_log_penalty(outputs_fore_k.a_weight[0, -1], a_i_log_clean, triu_idx)
+                        0.5 * self._delta_log_penalty(a_pred_k, a_i_log_clean, triu_idx)
                     )
+                if self.lambda_density > 0 and density_factor > 0:
+                    loss_density.append(0.5 * self._density_loss(torch.sigmoid(outputs_fore_k.a_logit[0, -1]), a_raw[b, k], triu_idx))
                 topo_loss_k = self._betti_curve_loss(
                     pred_sparse_k,
                     a_raw[b, k],
@@ -1377,15 +1450,22 @@ class CLGTrainer:
             if loss_delta_log
             else torch.tensor(0.0, device=self.device)
         )
+        mean_density = (
+            torch.stack(loss_density).mean()
+            if loss_density
+            else torch.tensor(0.0, device=self.device)
+        )
 
         if self.lambda_topo > 0:
             total = total + self.lambda_topo * w_topo * topo_warmup * mean_topo
         if self.lambda_full_log_mse > 0:
             total = total + self.lambda_full_log_mse * mean_full_log
-        if self.lambda_zero_log > 0:
-            total = total + self.lambda_zero_log * mean_zero_log
+        if self.lambda_zero_log > 0 and zero_log_factor > 0:
+            total = total + (self.lambda_zero_log * float(zero_log_factor)) * mean_zero_log
         if self.lambda_delta_log > 0:
             total = total + self.lambda_delta_log * mean_delta_log
+        if self.lambda_density > 0 and density_factor > 0:
+            total = total + (self.lambda_density * float(density_factor)) * mean_density
         metrics = {
             "manifold_sum": float(mean_manifold.detach().item()) * max(len(loss_manifold), 1),
             "vel_sum": float(mean_vel.detach().item()) * max(len(loss_vel), 1),
@@ -1395,6 +1475,7 @@ class CLGTrainer:
             "full_log_sum": float(mean_full_log.detach().item()) * max(len(loss_full_log), 1),
             "zero_log_sum": float(mean_zero_log.detach().item()) * max(len(loss_zero_log), 1),
             "delta_log_sum": float(mean_delta_log.detach().item()) * max(len(loss_delta_log), 1),
+            "density_sum": float(mean_density.detach().item()) * max(len(loss_density), 1),
             "manifold_count": int(len(loss_manifold)),
             "vel_count": int(len(loss_vel)),
             "acc_count": int(len(loss_acc)),
@@ -1402,6 +1483,7 @@ class CLGTrainer:
             "full_log_count": int(len(loss_full_log)),
             "zero_log_count": int(len(loss_zero_log)),
             "delta_log_count": int(len(loss_delta_log)),
+            "density_count": int(len(loss_density)),
             "topo_raw_values": topo_raw_values,
         }
         return total, metrics
@@ -1475,7 +1557,7 @@ class CLGTrainer:
                             cov,
                             use_mu=True,
                         )
-                        pred_weight = outputs.a_weight[0, 0]
+                        pred_weight = self._expected_weight(outputs.a_logit[0, 0], outputs.a_weight[0, 0])
                         true_raw = a_raw[b, i]
                     else:
                         age_j = float(ages[b, j].item())
@@ -1490,7 +1572,7 @@ class CLGTrainer:
                             cov,
                             use_mu=True,
                         )
-                        pred_weight = outputs.a_weight[0, -1]
+                        pred_weight = self._expected_weight(outputs.a_logit[0, -1], outputs.a_weight[0, -1])
                         true_raw = a_raw[b, j]
 
                     metrics = self._sc_metrics(pred_weight, true_raw, triu_idx)
@@ -1611,6 +1693,16 @@ class CLGTrainer:
                     val_m = getattr(self, "_last_epoch_val_metrics", {})
                     train_c = getattr(self, "_last_epoch_train_counts", {})
                     val_c = getattr(self, "_last_epoch_val_counts", {})
+                    density_factor = self._linear_warmup_factor(
+                        epoch,
+                        warmup_epochs=self.density_warmup_epochs,
+                        ramp_epochs=self.density_ramp_epochs,
+                    )
+                    zero_log_factor = self._linear_warmup_factor(
+                        epoch,
+                        warmup_epochs=self.zero_log_warmup_epochs,
+                        ramp_epochs=self.zero_log_ramp_epochs,
+                    )
                     self._append_metrics_row(
                         {
                             "fold": fold_idx,
@@ -1625,11 +1717,13 @@ class CLGTrainer:
                             "train_full_log": float(train_m.get("full_log", 0.0)),
                             "train_zero_log": float(train_m.get("zero_log", 0.0)),
                             "train_delta_log": float(train_m.get("delta_log", 0.0)),
+                            "train_density": float(train_m.get("density", 0.0)),
                             "train_vel_count": int(train_c.get("vel", 0)),
                             "train_acc_count": int(train_c.get("acc", 0)),
                             "train_full_log_count": int(train_c.get("full_log", 0)),
                             "train_zero_log_count": int(train_c.get("zero_log", 0)),
                             "train_delta_log_count": int(train_c.get("delta_log", 0)),
+                            "train_density_count": int(train_c.get("density", 0)),
                             "val_manifold": float(val_m.get("manifold", 0.0)),
                             "val_vel": float(val_m.get("vel", 0.0)),
                             "val_acc": float(val_m.get("acc", 0.0)),
@@ -1638,11 +1732,13 @@ class CLGTrainer:
                             "val_full_log": float(val_m.get("full_log", 0.0)),
                             "val_zero_log": float(val_m.get("zero_log", 0.0)),
                             "val_delta_log": float(val_m.get("delta_log", 0.0)),
+                            "val_density": float(val_m.get("density", 0.0)),
                             "val_vel_count": int(val_c.get("vel", 0)),
                             "val_acc_count": int(val_c.get("acc", 0)),
                             "val_full_log_count": int(val_c.get("full_log", 0)),
                             "val_zero_log_count": int(val_c.get("zero_log", 0)),
                             "val_delta_log_count": int(val_c.get("delta_log", 0)),
+                            "val_density_count": int(val_c.get("density", 0)),
                             "enable_vel": int(epoch >= self.warmup_manifold_epochs),
                             "enable_acc": int(epoch >= self.warmup_vel_epochs),
                             "lambda_manifold": float(self.lambda_manifold),
@@ -1653,6 +1749,13 @@ class CLGTrainer:
                             "lambda_full_log_mse": float(self.lambda_full_log_mse),
                             "lambda_zero_log": float(self.lambda_zero_log),
                             "lambda_delta_log": float(self.lambda_delta_log),
+                            "lambda_density": float(self.lambda_density),
+                            "density_warmup_epochs": int(self.density_warmup_epochs),
+                            "density_ramp_epochs": int(self.density_ramp_epochs),
+                            "density_factor": float(density_factor),
+                            "zero_log_warmup_epochs": int(self.zero_log_warmup_epochs),
+                            "zero_log_ramp_epochs": int(self.zero_log_ramp_epochs),
+                            "zero_log_factor": float(zero_log_factor),
                             "topo_scale": float(self._topo_scale),
                             "topo_scale_quantile": float(self.topo_scale_quantile),
                             "topo_log_compress": int(self.topo_log_compress),

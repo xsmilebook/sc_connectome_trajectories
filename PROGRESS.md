@@ -3,6 +3,7 @@
 
 ## Current focus
 - 2026-01-16: Validate CLG-ODE loss stabilization changes (topo normalization + GradNorm + warmup).
+- 2026-01-19: Enforce container-only DL training and align CLG-ODE sparse prediction with masked expected weight.
 
 ## Completed
 - 2026-01-12: Drafted the repo-structure refactor plan in `PLAN.md`.
@@ -68,6 +69,9 @@
 - 2026-01-16: Removed sbatch time limits and added CLG-ODE resume support with a continue script.
 - 2026-01-16: Updated VectorLSTM/GNN baseline submission to run per-fold array jobs.
 - 2026-01-16: Summarized VectorLSTM/GNN baseline five-fold results and documented the report.
+- 2026-01-19: Documented container-only deep learning training (user-submitted `sbatch`) across `AGENTS.md`, `README.md`, `docs/workflow.md`, and `docs/cluster_gpu_usage.md`.
+- 2026-01-19: Updated CLG-ODE SC prediction to use masked expected weight (`A_pred = sigmoid(a_logit) * a_weight`) for weight/topology/metrics; added optional density constraint and warmup/ramp CLI flags.
+- 2026-01-19: Added fold0 submit scripts to test mask alignment and constraints (`scripts/submit_clg_ode_mask_fold0_*.sh` + batch wrapper).
 
 ## In progress
 

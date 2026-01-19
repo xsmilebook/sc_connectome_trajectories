@@ -82,10 +82,40 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Weight for zero-edge log penalty to suppress false positives.",
     )
     parser.add_argument(
+        "--zero_log_warmup_epochs",
+        type=int,
+        default=0,
+        help="Warmup epochs before enabling the zero-edge log penalty.",
+    )
+    parser.add_argument(
+        "--zero_log_ramp_epochs",
+        type=int,
+        default=0,
+        help="Linear ramp epochs for the zero-edge log penalty after warmup.",
+    )
+    parser.add_argument(
         "--lambda_delta_log",
         type=float,
         default=0.0,
         help="Weight for log-space residual shrinkage toward identity.",
+    )
+    parser.add_argument(
+        "--lambda_density",
+        type=float,
+        default=0.0,
+        help="Weight for expected edge-count constraint on p_hat (soft mask).",
+    )
+    parser.add_argument(
+        "--density_warmup_epochs",
+        type=int,
+        default=0,
+        help="Warmup epochs before enabling the density/edge-count constraint.",
+    )
+    parser.add_argument(
+        "--density_ramp_epochs",
+        type=int,
+        default=0,
+        help="Linear ramp epochs for the density/edge-count constraint after warmup.",
     )
     parser.add_argument("--lambda_manifold", type=float, default=1.0)
     parser.add_argument("--lambda_vel", type=float, default=0.2)
@@ -216,7 +246,12 @@ def main() -> None:
         lambda_weight=args.lambda_weight,
         lambda_full_log_mse=args.lambda_full_log_mse,
         lambda_zero_log=args.lambda_zero_log,
+        zero_log_warmup_epochs=args.zero_log_warmup_epochs,
+        zero_log_ramp_epochs=args.zero_log_ramp_epochs,
         lambda_delta_log=args.lambda_delta_log,
+        lambda_density=args.lambda_density,
+        density_warmup_epochs=args.density_warmup_epochs,
+        density_ramp_epochs=args.density_ramp_epochs,
         lambda_manifold=args.lambda_manifold,
         lambda_vel=args.lambda_vel,
         lambda_acc=args.lambda_acc,

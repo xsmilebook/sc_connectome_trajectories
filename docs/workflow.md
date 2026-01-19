@@ -130,12 +130,18 @@ sbatch scripts/submit_gnn_baseline.sh
 
 ### CLG-ODE
 
+注意（重要）：本项目的深度学习训练（含 CLG-ODE）**禁止在宿主机上直接运行**（例如直接 `python -m scripts.train_clg_ode` 或尝试 `pip/conda install torch`），因为当前集群节点的系统/工具链过旧，难以可靠安装与运行 PyTorch。请统一使用 **Slurm + 容器（Singularity/Apptainer）** 的方式训练，并由用户提交 `sbatch` 任务。
+
+推荐提交方式（单卡，按 fold 训练；由用户提交）：
+
 ```bash
-python -m scripts.train_clg_ode \
-  --sc_dir data/processed/sc_connectome/schaefer400 \
-  --morph_root data/processed/morphology \
-  --subject_info_csv data/processed/table/subject_info_sc.csv \
-  --results_dir outputs/results/clg_ode
+sbatch scripts/submit_clg_ode.sh
+```
+
+如需用 Slurm array 一次性提交 5 个 fold（0-4），可由用户执行：
+
+```bash
+sbatch --array=0-4 scripts/submit_clg_ode.sh
 ```
 
 运行目录与记录追溯：
@@ -164,7 +170,9 @@ python -m scripts.train_clg_ode \
 - 训练阶段对预测权重执行 top-k 稀疏化用于 `L_weight` 与 `L_topo`，与真实稀疏结构对齐（见 `docs/methods.md`）。
 - 可选残差跳连：`--residual_skip` 启用 log 空间残差（`log1p(a0) + s(dt)*tanh(delta)`），`s(dt)=dt/(dt+tau)` 由 `--residual_tau` 控制。
 - 可选全边 log-MSE：`--lambda_full_log_mse` 用于对齐 `test_sc_metrics` 的评估口径。
-- 可选零边抑制与残差收缩：`--lambda_zero_log` 用于压制零边权重，`--lambda_delta_log` 用于收缩预测到 identity。
+- 可选零边抑制与残差收缩：`--lambda_zero_log` 用于压制零边幅值，`--lambda_delta_log` 用于收缩预测到 identity。
+- 可选稀疏度/边数约束（soft mask）：`--lambda_density` 约束 `p_hat` 的期望正边数接近真值（训练更稳、与稀疏评估口径一致）。
+- `lambda_zero_log` 与 `lambda_density` 推荐配合 warmup/ramp，避免初期塌缩：`--zero_log_warmup_epochs/--zero_log_ramp_epochs`，`--density_warmup_epochs/--density_ramp_epochs`。
 - 残差幅度上限：`--residual_cap` 控制 `tanh` 输出幅度上限。
 
 按 fold 拆分提交（单卡替代多卡）：
@@ -189,6 +197,18 @@ python -m scripts.train_clg_ode \
 集群提交脚本（Slurm + Singularity）：
 
 ```bash
+sbatch scripts/submit_clg_ode.sh
+```
+
+常用参数（通过环境变量传给 `submit_clg_ode.sh`；由用户提交）：
+
+```bash
+LAMBDA_DENSITY=0.05 \
+DENSITY_WARMUP_EPOCHS=10 \
+DENSITY_RAMP_EPOCHS=20 \
+LAMBDA_ZERO_LOG=0.05 \
+ZERO_LOG_WARMUP_EPOCHS=10 \
+ZERO_LOG_RAMP_EPOCHS=20 \
 sbatch scripts/submit_clg_ode.sh
 ```
 
@@ -221,6 +241,21 @@ sbatch scripts/submit_clg_ode_fast_fold0_d.sh
 
 ```bash
 bash scripts/submit_clg_ode_fast_fold0_batch.sh
+```
+
+Mask 学习与稀疏化对齐测试（fold0，用户提交；聚焦 `p_hat` mask + 密度/零边约束）：
+
+```bash
+sbatch scripts/submit_clg_ode_mask_fold0_a.sh
+sbatch scripts/submit_clg_ode_mask_fold0_b.sh
+sbatch scripts/submit_clg_ode_mask_fold0_c.sh
+sbatch scripts/submit_clg_ode_mask_fold0_d.sh
+```
+
+一次性批量提交：
+
+```bash
+bash scripts/submit_clg_ode_mask_fold0_batch.sh
 ```
 
 可选环境变量（不改脚本也能快速调整）：
