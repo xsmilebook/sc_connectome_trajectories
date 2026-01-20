@@ -9,8 +9,8 @@
 set -euo pipefail
 
 # Fixed-support residual + conservative innovation (N=400 defaults).
-export CLG_CV_FOLD=0
-export RUN_BASE="clg_fs_innov_default"
+export CLG_CV_FOLD="${CLG_CV_FOLD:-0}"
+export RUN_BASE="${RUN_BASE:-clg_fs_innov_default}"
 
 export RESIDUAL_SKIP=1
 export RESIDUAL_TAU=1.0
@@ -51,4 +51,3 @@ export SC_POS_EDGE_DROP_PROB=0.0
 export MORPH_NOISE_SIGMA=0.0
 
 bash scripts/submit_clg_ode.sh
-

@@ -758,7 +758,10 @@ class CLGTrainer:
         if epoch < self.new_sparse_warmup_epochs:
             return pred_support, out
 
-        i_idx, j_idx = triu_idx
+        i_idx_np, j_idx_np = triu_idx
+        i_idx = torch.as_tensor(i_idx_np, device=pred_support.device, dtype=torch.long)
+        j_idx = torch.as_tensor(j_idx_np, device=pred_support.device, dtype=torch.long)
+
         l_vec = l_new[i_idx, j_idx]
         pool_mask = a0_raw[i_idx, j_idx] <= 0
         pool_pos = torch.nonzero(pool_mask, as_tuple=False).squeeze(1)
