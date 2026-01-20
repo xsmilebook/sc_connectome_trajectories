@@ -267,6 +267,28 @@ Fixed-support + 保守新增边（fold0，用户提交；推荐交付版默认�
 sbatch scripts/submit_clg_ode_fixedsupport_innovation_fold0.sh
 ```
 
+对照与消融（fold0，用户提交）：
+
+```bash
+# B0: Identity baseline（CLG-ODE test split）
+sbatch scripts/submit_identity_baseline_sc_eval.sh
+
+# B1: CLG-ODE baseline（no residual / no fixed-support / no innovation）
+sbatch scripts/submit_clg_ode_baseline_original_fold0.sh
+
+# A1: fixed-support + residual（no innovation）
+sbatch scripts/submit_clg_ode_fixedsupport_residual_fold0.sh
+
+# B2: remove residual dt gate
+sbatch scripts/submit_clg_ode_fixedsupport_no_dt_gate_fold0.sh
+
+# C2: remove L_small (residual shrinkage)
+sbatch scripts/submit_clg_ode_fixedsupport_no_Lsmall_fold0.sh
+
+# B3: fixed-support without residual skip
+sbatch scripts/submit_clg_ode_fixedsupport_no_residual_fold0.sh
+```
+
 说明：
 
 - `--fixed_support`：主干仅在 `A0>0` 支持集上学习/预测，避免无约束稠密化。

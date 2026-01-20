@@ -69,6 +69,7 @@ class CLGTrainer:
         solver_steps: int = 8,
         residual_skip: bool = False,
         residual_tau: float = 1.0,
+        residual_no_dt_gate: bool = False,
         residual_cap: float = 0.5,
         fixed_support: bool = False,
         innovation_enabled: bool = False,
@@ -151,6 +152,7 @@ class CLGTrainer:
         self.solver_steps = solver_steps
         self.residual_skip = bool(residual_skip)
         self.residual_tau = float(residual_tau)
+        self.residual_no_dt_gate = bool(residual_no_dt_gate)
         self.residual_cap = float(residual_cap)
         self.fixed_support = bool(fixed_support)
         self.innovation_enabled = bool(innovation_enabled)
@@ -187,8 +189,6 @@ class CLGTrainer:
         if scope not in {"manifold_topo", "none"}:
             raise ValueError(f"Unsupported gradnorm_scope: {gradnorm_scope}")
 
-        if self.fixed_support and not self.residual_skip:
-            raise ValueError("fixed_support requires residual_skip (log-space residual baseline).")
         if self.innovation_enabled and not self.fixed_support:
             raise ValueError("innovation_enabled is only supported when fixed_support is enabled.")
         if self.innovation_topm <= 0:
@@ -367,6 +367,7 @@ class CLGTrainer:
             solver_steps=self.solver_steps,
             residual_skip=self.residual_skip,
             residual_tau=self.residual_tau,
+            residual_no_dt_gate=self.residual_no_dt_gate,
             residual_cap=self.residual_cap,
         )
 
@@ -679,6 +680,13 @@ class CLGTrainer:
         return torch.sigmoid(a_logit) * torch.clamp(a_weight, min=0.0)
 
     @staticmethod
+    def _apply_fixed_support(pred_weight: torch.Tensor, a0_raw: torch.Tensor) -> torch.Tensor:
+        support = (a0_raw > 0).to(dtype=pred_weight.dtype)
+        out = torch.clamp(pred_weight, min=0.0) * support
+        out = out - torch.diag_embed(torch.diagonal(out, dim1=-2, dim2=-1))
+        return out
+
+    @staticmethod
     def _linear_warmup_factor(epoch: int, warmup_epochs: int, ramp_epochs: int) -> float:
         if warmup_epochs <= 0 and ramp_epochs <= 0:
             return 1.0
@@ -707,10 +715,11 @@ class CLGTrainer:
         true_log = torch.log1p(torch.clamp(true_raw, min=0.0))
         pred_vec = pred_log[triu_idx[0], triu_idx[1]]
         true_vec = true_log[triu_idx[0], triu_idx[1]]
-        mask = ((true_raw[triu_idx[0], triu_idx[1]] > 0) & (a0_raw[triu_idx[0], triu_idx[1]] > 0)).to(
-            dtype=pred_vec.dtype
-        )
-        return weight_huber_loss(pred_vec, true_vec, mask)
+        mask = (a0_raw[triu_idx[0], triu_idx[1]] > 0).to(dtype=pred_vec.dtype)
+        if mask.sum().item() == 0:
+            return torch.tensor(0.0, device=pred_vec.device)
+        loss = F.smooth_l1_loss(pred_vec, true_vec, reduction="none")
+        return (loss * mask).sum() / mask.sum()
 
     def _innovation_step(
         self,
@@ -1606,7 +1615,7 @@ class CLGTrainer:
                 use_mu=True,
             )
             if self.fixed_support:
-                a_pred_i = torch.clamp(outputs_denoise.a_weight[0, 0], min=0.0)
+                a_pred_i = self._apply_fixed_support(outputs_denoise.a_weight[0, 0], a_raw[b, i])
             else:
                 a_pred_i = self._expected_weight(outputs_denoise.a_logit[0, 0], outputs_denoise.a_weight[0, 0])
             pred_sparse_i, _ = self._sparsify_pred(a_pred_i, a_raw[b, i], triu_idx)
@@ -1675,7 +1684,7 @@ class CLGTrainer:
                 if self.fixed_support:
                     if outputs_fore.a_weight_new is None or outputs_fore.l_new is None:
                         raise RuntimeError("Model outputs missing a_weight_new/l_new required for innovation.")
-                    a_pred_j = torch.clamp(outputs_fore.a_weight[0, -1], min=0.0)
+                    a_pred_j = self._apply_fixed_support(outputs_fore.a_weight[0, -1], a_raw[b, i])
                     a_pred_j, innov = self._innovation_step(
                         pred_support=a_pred_j,
                         pred_new_dense=torch.clamp(outputs_fore.a_weight_new[0, -1], min=0.0),
@@ -1775,7 +1784,7 @@ class CLGTrainer:
                 if self.fixed_support:
                     if outputs_fore_k.a_weight_new is None or outputs_fore_k.l_new is None:
                         raise RuntimeError("Model outputs missing a_weight_new/l_new required for innovation.")
-                    a_pred_k = torch.clamp(outputs_fore_k.a_weight[0, -1], min=0.0)
+                    a_pred_k = self._apply_fixed_support(outputs_fore_k.a_weight[0, -1], a_raw[b, i])
                     a_pred_k, innov = self._innovation_step(
                         pred_support=a_pred_k,
                         pred_new_dense=torch.clamp(outputs_fore_k.a_weight_new[0, -1], min=0.0),
@@ -2094,7 +2103,7 @@ class CLGTrainer:
                             use_mu=True,
                         )
                         if self.fixed_support:
-                            pred_weight = torch.clamp(outputs.a_weight[0, 0], min=0.0)
+                            pred_weight = self._apply_fixed_support(outputs.a_weight[0, 0], a_raw[b, i])
                         else:
                             pred_weight = self._expected_weight(outputs.a_logit[0, 0], outputs.a_weight[0, 0])
                         true_raw = a_raw[b, i]
@@ -2115,7 +2124,7 @@ class CLGTrainer:
                         if self.fixed_support:
                             if outputs.a_weight_new is None or outputs.l_new is None:
                                 raise RuntimeError("Model outputs missing a_weight_new/l_new required for innovation.")
-                            pred_weight = torch.clamp(outputs.a_weight[0, -1], min=0.0)
+                            pred_weight = self._apply_fixed_support(outputs.a_weight[0, -1], a_raw[b, i])
                             pred_weight, _ = self._innovation_step(
                                 pred_support=pred_weight,
                                 pred_new_dense=torch.clamp(outputs.a_weight_new[0, -1], min=0.0),

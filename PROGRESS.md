@@ -9,6 +9,7 @@
 - 2026-01-20: Specify dt-quantile stratified reporting (P33/P67) and conservative innovation hyperparameters (N=400, TopM/K_new, dt gating, focal + sparsity ramp).
 - 2026-01-20: Clarify innovation-score notation (use raw innovation logit for P95 thresholding and q computation).
 - 2026-01-20: Implement fixed-support residual + conservative innovation (TopM/TopK, per-sample P95 thresholding) and add fold0 sbatch template.
+- 2026-01-20: Add baseline/ablation sbatch scripts for identity, original CLG-ODE, fixed-support variants (dt gate / L_small / residual).
 
 ## Completed
 - 2026-01-12: Drafted the repo-structure refactor plan in `PLAN.md`.

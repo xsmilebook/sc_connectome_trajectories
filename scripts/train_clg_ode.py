@@ -193,6 +193,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Time-scale for residual skip (dt/(dt+tau)).",
     )
     parser.add_argument(
+        "--residual_no_dt_gate",
+        action="store_true",
+        help="Disable dt gating for residual skip (always uses scale=1).",
+    )
+    parser.add_argument(
         "--residual_cap",
         type=float,
         default=0.5,
@@ -370,6 +375,7 @@ def main() -> None:
         adjacent_pair_prob=args.adjacent_pair_prob,
         residual_skip=args.residual_skip,
         residual_tau=args.residual_tau,
+        residual_no_dt_gate=args.residual_no_dt_gate,
         residual_cap=args.residual_cap,
         fixed_support=args.fixed_support,
         innovation_enabled=args.innovation_enabled,

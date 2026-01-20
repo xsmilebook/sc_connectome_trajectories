@@ -116,6 +116,7 @@ singularity exec --nv \
     ${DENSITY_RAMP_EPOCHS:+--density_ramp_epochs "$DENSITY_RAMP_EPOCHS"} \
     ${ADJACENT_PAIR_PROB:+--adjacent_pair_prob "$ADJACENT_PAIR_PROB"} \
     ${RESIDUAL_TAU:+--residual_tau "$RESIDUAL_TAU"} \
+    ${RESIDUAL_NO_DT_GATE:+--residual_no_dt_gate} \
     ${RESIDUAL_CAP:+--residual_cap "$RESIDUAL_CAP"} \
     ${FIXED_SUPPORT:+--fixed_support} \
     ${INNOVATION_ENABLED:+--innovation_enabled} \

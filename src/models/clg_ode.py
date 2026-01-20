@@ -113,6 +113,7 @@ class ConnDecoder(nn.Module):
         times: torch.Tensor | None = None,
         residual_skip: bool = False,
         residual_tau: float = 1.0,
+        residual_no_dt_gate: bool = False,
         residual_cap: float = 0.5,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         score = torch.matmul(z, z.transpose(-1, -2))
@@ -124,7 +125,10 @@ class ConnDecoder(nn.Module):
             delta_log = torch.tanh(delta_log) * float(residual_cap)
             if times.dim() == 1:
                 times = times.unsqueeze(0).expand(z.shape[0], -1)
-            scale = times / (times + float(residual_tau))
+            if residual_no_dt_gate:
+                scale = torch.ones_like(times)
+            else:
+                scale = times / (times + float(residual_tau))
             scale = scale.unsqueeze(-1).unsqueeze(-1)
             if a0_log.dim() == 3 and z.dim() == 4:
                 base = a0_log.unsqueeze(1)
@@ -154,6 +158,7 @@ class CLGODE(nn.Module):
         solver_steps: int = 8,
         residual_skip: bool = False,
         residual_tau: float = 1.0,
+        residual_no_dt_gate: bool = False,
         residual_cap: float = 0.5,
     ) -> None:
         super().__init__()
@@ -162,6 +167,7 @@ class CLGODE(nn.Module):
         self.solver_steps = solver_steps
         self.residual_skip = residual_skip
         self.residual_tau = residual_tau
+        self.residual_no_dt_gate = residual_no_dt_gate
         self.residual_cap = residual_cap
         self.morph_encoder = GraphEncoder(morph_dim, hidden_dim, latent_dim)
         self.conn_encoder = GraphEncoder(morph_dim, hidden_dim, latent_dim)
@@ -208,6 +214,7 @@ class CLGODE(nn.Module):
             times=times,
             residual_skip=self.residual_skip,
             residual_tau=self.residual_tau,
+            residual_no_dt_gate=self.residual_no_dt_gate,
             residual_cap=self.residual_cap,
         )
         return CLGOutput(
