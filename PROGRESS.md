@@ -76,6 +76,7 @@
 - 2026-01-19: Ran and summarized the fold0 mask/density/zero ablations; documented metrics and next-step suggestions in `docs/reports/clg_ode_mask_fold0_20260119.md`.
 - 2026-01-19: Added early stopping monitors based on validation SC sparse/top-k metrics and a 10-experiment density convergence submit set (`scripts/submit_clg_ode_density_10exp_batch.sh`).
 - 2026-01-20: Summarized the 10 density-convergence experiments (fold0) and wrote a report (`docs/reports/clg_ode_density_convergence_fold0_20260120.md`).
+- 2026-01-20: Added mask diagnostics (sum(p)/k, p quantiles, precision@k, AUPRC) + edge-loss options (BCE pos_weight vs focal) and a 10-run root-cause ablation batch.
 
 ## In progress
 

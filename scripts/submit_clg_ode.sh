@@ -99,6 +99,10 @@ singularity exec --nv \
     ${LEARNING_RATE:+--learning_rate "$LEARNING_RATE"} \
     ${SOLVER_STEPS:+--solver_steps "$SOLVER_STEPS"} \
     ${LAMBDA_KL:+--lambda_kl "$LAMBDA_KL"} \
+    ${EDGE_LOSS:+--edge_loss "$EDGE_LOSS"} \
+    ${EDGE_POS_WEIGHT:+--edge_pos_weight "$EDGE_POS_WEIGHT"} \
+    ${FOCAL_GAMMA:+--focal_gamma "$FOCAL_GAMMA"} \
+    ${FOCAL_ALPHA:+--focal_alpha "$FOCAL_ALPHA"} \
     ${LAMBDA_TOPO:+--lambda_topo "$LAMBDA_TOPO"} \
     ${LAMBDA_VEL:+--lambda_vel "$LAMBDA_VEL"} \
     ${LAMBDA_ACC:+--lambda_acc "$LAMBDA_ACC"} \
@@ -120,6 +124,7 @@ singularity exec --nv \
     ${EARLY_STOP_METRIC:+--early_stop_metric "$EARLY_STOP_METRIC"} \
     ${EARLY_STOP_DENSITY_WEIGHT:+--early_stop_density_weight "$EARLY_STOP_DENSITY_WEIGHT"} \
     ${VAL_SC_EVAL_EVERY:+--val_sc_eval_every "$VAL_SC_EVAL_EVERY"} \
+    ${COMPUTE_MASK_AUPRC:+--compute_mask_auprc} \
     ${DISABLE_S_MEAN:+--disable_s_mean} \
     ${DISABLE_TOPO_LOG_COMPRESS:+--disable_topo_log_compress} \
     ${RESIDUAL_SKIP:+--residual_skip} \

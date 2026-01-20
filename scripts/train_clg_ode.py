@@ -70,6 +70,31 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--lambda_kl", type=float, default=1e-4)
     parser.add_argument("--lambda_weight", type=float, default=1.0)
     parser.add_argument(
+        "--edge_loss",
+        type=str,
+        default="bce",
+        choices=["bce", "focal"],
+        help="Edge existence loss type for p_hat supervision.",
+    )
+    parser.add_argument(
+        "--edge_pos_weight",
+        type=float,
+        default=5.0,
+        help="Positive class weight for BCE (ignored for focal).",
+    )
+    parser.add_argument(
+        "--focal_gamma",
+        type=float,
+        default=2.0,
+        help="Focal loss gamma (only for edge_loss=focal).",
+    )
+    parser.add_argument(
+        "--focal_alpha",
+        type=float,
+        default=-1.0,
+        help="Focal loss alpha in [0,1]; use -1 to disable (only for edge_loss=focal).",
+    )
+    parser.add_argument(
         "--lambda_full_log_mse",
         type=float,
         default=0.0,
@@ -116,6 +141,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
         type=int,
         default=0,
         help="Linear ramp epochs for the density/edge-count constraint after warmup.",
+    )
+    parser.add_argument(
+        "--compute_mask_auprc",
+        action="store_true",
+        help="Compute mask AUPRC (average precision) for p_hat diagnostics (slower).",
     )
     parser.add_argument("--lambda_manifold", type=float, default=1.0)
     parser.add_argument("--lambda_vel", type=float, default=0.2)
@@ -269,6 +299,10 @@ def main() -> None:
         random_state=args.random_state,
         lambda_kl=args.lambda_kl,
         lambda_weight=args.lambda_weight,
+        edge_loss=args.edge_loss,
+        edge_pos_weight=args.edge_pos_weight,
+        focal_gamma=args.focal_gamma,
+        focal_alpha=None if args.focal_alpha < 0 else args.focal_alpha,
         lambda_full_log_mse=args.lambda_full_log_mse,
         lambda_zero_log=args.lambda_zero_log,
         zero_log_warmup_epochs=args.zero_log_warmup_epochs,
@@ -277,6 +311,7 @@ def main() -> None:
         lambda_density=args.lambda_density,
         density_warmup_epochs=args.density_warmup_epochs,
         density_ramp_epochs=args.density_ramp_epochs,
+        compute_mask_auprc=args.compute_mask_auprc,
         lambda_manifold=args.lambda_manifold,
         lambda_vel=args.lambda_vel,
         lambda_acc=args.lambda_acc,

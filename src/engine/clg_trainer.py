@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Tuple
 
 import numpy as np
 from sklearn.model_selection import GroupKFold, GroupShuffleSplit
+from sklearn.metrics import average_precision_score
 
 import torch
 from torch import nn
@@ -21,7 +22,7 @@ from torch.nn import functional as F
 from src.data.clg_dataset import CLGDataset, collate_clg_sequences
 from src.data.utils import compute_triu_indices, ensure_dir
 from src.data.topology import compute_ecc
-from src.engine.losses import edge_bce_loss, weight_huber_loss
+from src.engine.losses import edge_bce_loss, edge_focal_loss_with_logits, weight_huber_loss
 from src.models.clg_ode import CLGODE
 
 
@@ -49,6 +50,10 @@ class CLGTrainer:
         random_state: int = 42,
         lambda_kl: float = 0.0,
         lambda_weight: float = 1.0,
+        edge_loss: str = "bce",
+        edge_pos_weight: float = 5.0,
+        focal_gamma: float = 2.0,
+        focal_alpha: float | None = None,
         lambda_full_log_mse: float = 0.0,
         lambda_zero_log: float = 0.0,
         zero_log_warmup_epochs: int = 0,
@@ -57,6 +62,7 @@ class CLGTrainer:
         lambda_density: float = 0.0,
         density_warmup_epochs: int = 0,
         density_ramp_epochs: int = 0,
+        compute_mask_auprc: bool = False,
         use_s_mean: bool = True,
         topo_bins: int = 32,
         adjacent_pair_prob: float = 0.7,
@@ -111,6 +117,12 @@ class CLGTrainer:
         self.random_state = random_state
         self.lambda_kl = lambda_kl
         self.lambda_weight = lambda_weight
+        self.edge_loss = str(edge_loss).strip().lower()
+        if self.edge_loss not in {"bce", "focal"}:
+            raise ValueError(f"Unsupported edge_loss: {edge_loss}")
+        self.edge_pos_weight = float(edge_pos_weight)
+        self.focal_gamma = float(focal_gamma)
+        self.focal_alpha = None if focal_alpha is None else float(focal_alpha)
         self.lambda_full_log_mse = float(lambda_full_log_mse)
         self.lambda_zero_log = float(lambda_zero_log)
         self.zero_log_warmup_epochs = int(zero_log_warmup_epochs)
@@ -119,6 +131,7 @@ class CLGTrainer:
         self.lambda_density = float(lambda_density)
         self.density_warmup_epochs = int(density_warmup_epochs)
         self.density_ramp_epochs = int(density_ramp_epochs)
+        self.compute_mask_auprc = bool(compute_mask_auprc)
         self.use_s_mean = use_s_mean
         self.topo_bins = topo_bins
         self.adjacent_pair_prob = adjacent_pair_prob
@@ -606,7 +619,15 @@ class CLGTrainer:
         loss_x = torch.mean((x_hat - x_true) ** 2)
         logit_vec = a_logit[:, triu_idx[0], triu_idx[1]]
         target_vec = (a_true_raw[:, triu_idx[0], triu_idx[1]] > 0).float()
-        loss_edge = edge_bce_loss(logit_vec, target_vec, pos_weight=5.0)
+        if self.edge_loss == "bce":
+            loss_edge = edge_bce_loss(logit_vec, target_vec, pos_weight=self.edge_pos_weight)
+        else:
+            loss_edge = edge_focal_loss_with_logits(
+                logit_vec,
+                target_vec,
+                gamma=self.focal_gamma,
+                alpha=self.focal_alpha,
+            )
         pred_log = torch.log1p(a_weight[:, triu_idx[0], triu_idx[1]])
         true_log = torch.log1p(a_true_raw[:, triu_idx[0], triu_idx[1]])
         loss_weight = weight_huber_loss(pred_log, true_log, target_vec)
@@ -640,6 +661,51 @@ class CLGTrainer:
         sum_p = p_vec.sum()
         rel = (sum_p - k.to(dtype=sum_p.dtype)) / k.to(dtype=sum_p.dtype)
         return rel ** 2
+
+    def _mask_diagnostics(
+        self,
+        p_hat: torch.Tensor,
+        true_raw: torch.Tensor,
+        triu_idx: Tuple[np.ndarray, np.ndarray],
+    ) -> Dict[str, float]:
+        p_vec = p_hat[triu_idx[0], triu_idx[1]]
+        true_vec = true_raw[triu_idx[0], triu_idx[1]]
+        y = (true_vec > 0).to(dtype=torch.float32)
+        k = int(y.sum().item())
+        if k <= 0:
+            return {}
+
+        sum_p = float(p_vec.sum().item())
+        ratio = sum_p / float(k)
+        mean_p = float(p_vec.mean().item())
+        q = torch.quantile(p_vec.detach(), torch.tensor([0.1, 0.5, 0.9], device=p_vec.device))
+        p10, p50, p90 = (float(q[0].item()), float(q[1].item()), float(q[2].item()))
+
+        topk = torch.topk(p_vec.detach(), k=k, largest=True)
+        pred_idx = topk.indices
+        tp = float(y[pred_idx].sum().item())
+        prec_k = tp / float(k)
+        rec_k = tp / float(k)
+
+        auprc = 0.0
+        if self.compute_mask_auprc:
+            y_np = y.detach().cpu().numpy()
+            p_np = p_vec.detach().cpu().numpy()
+            try:
+                auprc = float(average_precision_score(y_np, p_np))
+            except Exception:
+                auprc = 0.0
+
+        return {
+            "mask_ratio": ratio,
+            "mask_mean_p": mean_p,
+            "mask_p10": p10,
+            "mask_p50": p50,
+            "mask_p90": p90,
+            "mask_precision_at_k": prec_k,
+            "mask_recall_at_k": rec_k,
+            "mask_auprc": auprc,
+        }
 
     @staticmethod
     def _full_log_mse(
@@ -978,6 +1044,14 @@ class CLGTrainer:
         z_sum = 0.0
         d_sum = 0.0
         den_sum = 0.0
+        mask_ratio_sum = 0.0
+        mask_mean_p_sum = 0.0
+        mask_p10_sum = 0.0
+        mask_p50_sum = 0.0
+        mask_p90_sum = 0.0
+        mask_precision_sum = 0.0
+        mask_recall_sum = 0.0
+        mask_auprc_sum = 0.0
         m_count = 0
         v_count = 0
         a_count = 0
@@ -986,6 +1060,7 @@ class CLGTrainer:
         z_count = 0
         d_count = 0
         den_count = 0
+        mask_count = 0
         topo_raw_values: List[float] = []
         for batch in loader:
             if not batch:
@@ -1005,6 +1080,14 @@ class CLGTrainer:
             z_sum += metrics.get("zero_log_sum", 0.0)
             d_sum += metrics.get("delta_log_sum", 0.0)
             den_sum += metrics.get("density_sum", 0.0)
+            mask_ratio_sum += metrics.get("mask_ratio", 0.0)
+            mask_mean_p_sum += metrics.get("mask_mean_p", 0.0)
+            mask_p10_sum += metrics.get("mask_p10", 0.0)
+            mask_p50_sum += metrics.get("mask_p50", 0.0)
+            mask_p90_sum += metrics.get("mask_p90", 0.0)
+            mask_precision_sum += metrics.get("mask_precision_at_k", 0.0)
+            mask_recall_sum += metrics.get("mask_recall_at_k", 0.0)
+            mask_auprc_sum += metrics.get("mask_auprc", 0.0)
             m_count += metrics["manifold_count"]
             v_count += metrics["vel_count"]
             a_count += metrics["acc_count"]
@@ -1013,6 +1096,7 @@ class CLGTrainer:
             z_count += metrics.get("zero_log_count", 0)
             d_count += metrics.get("delta_log_count", 0)
             den_count += metrics.get("density_count", 0)
+            mask_count += metrics.get("mask_diag_count", 0)
             if self.is_main:
                 raw_vals = metrics.get("topo_raw_values")
                 if raw_vals:
@@ -1026,6 +1110,14 @@ class CLGTrainer:
         z_sum, z_count = self._reduce_sum_count(z_sum, z_count)
         d_sum, d_count = self._reduce_sum_count(d_sum, d_count)
         den_sum, den_count = self._reduce_sum_count(den_sum, den_count)
+        mask_ratio_sum, mask_count = self._reduce_sum_count(mask_ratio_sum, mask_count)
+        mask_mean_p_sum, _ = self._reduce_sum_count(mask_mean_p_sum, mask_count)
+        mask_p10_sum, _ = self._reduce_sum_count(mask_p10_sum, mask_count)
+        mask_p50_sum, _ = self._reduce_sum_count(mask_p50_sum, mask_count)
+        mask_p90_sum, _ = self._reduce_sum_count(mask_p90_sum, mask_count)
+        mask_precision_sum, _ = self._reduce_sum_count(mask_precision_sum, mask_count)
+        mask_recall_sum, _ = self._reduce_sum_count(mask_recall_sum, mask_count)
+        mask_auprc_sum, _ = self._reduce_sum_count(mask_auprc_sum, mask_count)
         if self.is_main:
             self._last_epoch_train_metrics = {
                 "manifold": (m_sum / m_count) if m_count > 0 else 0.0,
@@ -1037,6 +1129,14 @@ class CLGTrainer:
                 "zero_log": (z_sum / z_count) if z_count > 0 else 0.0,
                 "delta_log": (d_sum / d_count) if d_count > 0 else 0.0,
                 "density": (den_sum / den_count) if den_count > 0 else 0.0,
+                "mask_ratio": (mask_ratio_sum / mask_count) if mask_count > 0 else 0.0,
+                "mask_mean_p": (mask_mean_p_sum / mask_count) if mask_count > 0 else 0.0,
+                "mask_p10": (mask_p10_sum / mask_count) if mask_count > 0 else 0.0,
+                "mask_p50": (mask_p50_sum / mask_count) if mask_count > 0 else 0.0,
+                "mask_p90": (mask_p90_sum / mask_count) if mask_count > 0 else 0.0,
+                "mask_precision_at_k": (mask_precision_sum / mask_count) if mask_count > 0 else 0.0,
+                "mask_recall_at_k": (mask_recall_sum / mask_count) if mask_count > 0 else 0.0,
+                "mask_auprc": (mask_auprc_sum / mask_count) if mask_count > 0 else 0.0,
             }
             self._last_epoch_train_counts = {
                 "manifold": int(m_count),
@@ -1047,6 +1147,7 @@ class CLGTrainer:
                 "zero_log": int(z_count),
                 "delta_log": int(d_count),
                 "density": int(den_count),
+                "mask_diag": int(mask_count),
             }
         if self.is_main:
             self._update_topo_scale(topo_raw_values)
@@ -1074,6 +1175,14 @@ class CLGTrainer:
         z_sum = 0.0
         d_sum = 0.0
         den_sum = 0.0
+        mask_ratio_sum = 0.0
+        mask_mean_p_sum = 0.0
+        mask_p10_sum = 0.0
+        mask_p50_sum = 0.0
+        mask_p90_sum = 0.0
+        mask_precision_sum = 0.0
+        mask_recall_sum = 0.0
+        mask_auprc_sum = 0.0
         m_count = 0
         v_count = 0
         a_count = 0
@@ -1082,6 +1191,7 @@ class CLGTrainer:
         z_count = 0
         d_count = 0
         den_count = 0
+        mask_count = 0
         with torch.no_grad():
             for batch in loader:
                 if not batch:
@@ -1098,6 +1208,14 @@ class CLGTrainer:
                 z_sum += metrics.get("zero_log_sum", 0.0)
                 d_sum += metrics.get("delta_log_sum", 0.0)
                 den_sum += metrics.get("density_sum", 0.0)
+                mask_ratio_sum += metrics.get("mask_ratio", 0.0)
+                mask_mean_p_sum += metrics.get("mask_mean_p", 0.0)
+                mask_p10_sum += metrics.get("mask_p10", 0.0)
+                mask_p50_sum += metrics.get("mask_p50", 0.0)
+                mask_p90_sum += metrics.get("mask_p90", 0.0)
+                mask_precision_sum += metrics.get("mask_precision_at_k", 0.0)
+                mask_recall_sum += metrics.get("mask_recall_at_k", 0.0)
+                mask_auprc_sum += metrics.get("mask_auprc", 0.0)
                 m_count += metrics["manifold_count"]
                 v_count += metrics["vel_count"]
                 a_count += metrics["acc_count"]
@@ -1106,6 +1224,7 @@ class CLGTrainer:
                 z_count += metrics.get("zero_log_count", 0)
                 d_count += metrics.get("delta_log_count", 0)
                 den_count += metrics.get("density_count", 0)
+                mask_count += metrics.get("mask_diag_count", 0)
         m_sum, m_count = self._reduce_sum_count(m_sum, m_count)
         v_sum, v_count = self._reduce_sum_count(v_sum, v_count)
         a_sum, a_count = self._reduce_sum_count(a_sum, a_count)
@@ -1115,6 +1234,14 @@ class CLGTrainer:
         z_sum, z_count = self._reduce_sum_count(z_sum, z_count)
         d_sum, d_count = self._reduce_sum_count(d_sum, d_count)
         den_sum, den_count = self._reduce_sum_count(den_sum, den_count)
+        mask_ratio_sum, mask_count = self._reduce_sum_count(mask_ratio_sum, mask_count)
+        mask_mean_p_sum, _ = self._reduce_sum_count(mask_mean_p_sum, mask_count)
+        mask_p10_sum, _ = self._reduce_sum_count(mask_p10_sum, mask_count)
+        mask_p50_sum, _ = self._reduce_sum_count(mask_p50_sum, mask_count)
+        mask_p90_sum, _ = self._reduce_sum_count(mask_p90_sum, mask_count)
+        mask_precision_sum, _ = self._reduce_sum_count(mask_precision_sum, mask_count)
+        mask_recall_sum, _ = self._reduce_sum_count(mask_recall_sum, mask_count)
+        mask_auprc_sum, _ = self._reduce_sum_count(mask_auprc_sum, mask_count)
         if self.is_main:
             self._last_epoch_val_metrics = {
                 "manifold": (m_sum / m_count) if m_count > 0 else 0.0,
@@ -1126,6 +1253,14 @@ class CLGTrainer:
                 "zero_log": (z_sum / z_count) if z_count > 0 else 0.0,
                 "delta_log": (d_sum / d_count) if d_count > 0 else 0.0,
                 "density": (den_sum / den_count) if den_count > 0 else 0.0,
+                "mask_ratio": (mask_ratio_sum / mask_count) if mask_count > 0 else 0.0,
+                "mask_mean_p": (mask_mean_p_sum / mask_count) if mask_count > 0 else 0.0,
+                "mask_p10": (mask_p10_sum / mask_count) if mask_count > 0 else 0.0,
+                "mask_p50": (mask_p50_sum / mask_count) if mask_count > 0 else 0.0,
+                "mask_p90": (mask_p90_sum / mask_count) if mask_count > 0 else 0.0,
+                "mask_precision_at_k": (mask_precision_sum / mask_count) if mask_count > 0 else 0.0,
+                "mask_recall_at_k": (mask_recall_sum / mask_count) if mask_count > 0 else 0.0,
+                "mask_auprc": (mask_auprc_sum / mask_count) if mask_count > 0 else 0.0,
             }
             self._last_epoch_val_counts = {
                 "manifold": int(m_count),
@@ -1136,6 +1271,7 @@ class CLGTrainer:
                 "zero_log": int(z_count),
                 "delta_log": int(d_count),
                 "density": int(den_count),
+                "mask_diag": int(mask_count),
             }
         return self._reduce_loss(total_loss, count)
 
@@ -1181,6 +1317,7 @@ class CLGTrainer:
         loss_zero_log = []
         loss_delta_log = []
         loss_density = []
+        mask_diag = []
 
         for b, length in enumerate(lengths):
             if length >= 3:
@@ -1265,6 +1402,13 @@ class CLGTrainer:
                 )
             if self.lambda_density > 0 and density_factor > 0:
                 loss_density.append(self._density_loss(torch.sigmoid(outputs_denoise.a_logit[0, 0]), a_raw[b, i], triu_idx))
+            mask_diag.append(
+                self._mask_diagnostics(
+                    torch.sigmoid(outputs_denoise.a_logit[0, 0]),
+                    a_raw[b, i],
+                    triu_idx,
+                )
+            )
             topo_loss_i = self._betti_curve_loss(
                 pred_sparse_i,
                 a_raw[b, i],
@@ -1321,6 +1465,13 @@ class CLGTrainer:
                     )
                 if self.lambda_density > 0 and density_factor > 0:
                     loss_density.append(self._density_loss(torch.sigmoid(outputs_fore.a_logit[0, -1]), a_raw[b, j], triu_idx))
+                mask_diag.append(
+                    self._mask_diagnostics(
+                        torch.sigmoid(outputs_fore.a_logit[0, -1]),
+                        a_raw[b, j],
+                        triu_idx,
+                    )
+                )
                 topo_loss_j = self._betti_curve_loss(
                     pred_sparse_j,
                     a_raw[b, j],
@@ -1386,6 +1537,13 @@ class CLGTrainer:
                     )
                 if self.lambda_density > 0 and density_factor > 0:
                     loss_density.append(0.5 * self._density_loss(torch.sigmoid(outputs_fore_k.a_logit[0, -1]), a_raw[b, k], triu_idx))
+                mask_diag.append(
+                    self._mask_diagnostics(
+                        torch.sigmoid(outputs_fore_k.a_logit[0, -1]),
+                        a_raw[b, k],
+                        triu_idx,
+                    )
+                )
                 topo_loss_k = self._betti_curve_loss(
                     pred_sparse_k,
                     a_raw[b, k],
@@ -1495,6 +1653,16 @@ class CLGTrainer:
             if loss_density
             else torch.tensor(0.0, device=self.device)
         )
+        diag_keys = list(mask_diag[0].keys()) if mask_diag and mask_diag[0] else []
+        diag_sums: Dict[str, float] = {k: 0.0 for k in diag_keys}
+        diag_count = 0
+        for dct in mask_diag:
+            if not dct:
+                continue
+            for k, v in dct.items():
+                diag_sums[k] = diag_sums.get(k, 0.0) + float(v)
+            diag_count += 1
+        diag_means = {k: (v / diag_count if diag_count > 0 else 0.0) for k, v in diag_sums.items()}
 
         if self.lambda_topo > 0:
             total = total + self.lambda_topo * w_topo * topo_warmup * mean_topo
@@ -1525,7 +1693,15 @@ class CLGTrainer:
             "delta_log_count": int(len(loss_delta_log)),
             "density_count": int(len(loss_density)),
             "topo_raw_values": topo_raw_values,
+            "mask_diag_count": int(diag_count),
+            "edge_loss": self.edge_loss,
+            "edge_pos_weight": float(self.edge_pos_weight),
+            "focal_gamma": float(self.focal_gamma),
+            "focal_alpha": float(self.focal_alpha) if self.focal_alpha is not None else float("nan"),
+            "compute_mask_auprc": int(self.compute_mask_auprc),
         }
+        for k, v in diag_means.items():
+            metrics[k] = float(v)
         return total, metrics
 
     def _evaluate_sc_metrics(
@@ -1780,12 +1956,21 @@ class CLGTrainer:
                             "train_zero_log": float(train_m.get("zero_log", 0.0)),
                             "train_delta_log": float(train_m.get("delta_log", 0.0)),
                             "train_density": float(train_m.get("density", 0.0)),
+                            "train_mask_ratio": float(train_m.get("mask_ratio", 0.0)),
+                            "train_mask_mean_p": float(train_m.get("mask_mean_p", 0.0)),
+                            "train_mask_p10": float(train_m.get("mask_p10", 0.0)),
+                            "train_mask_p50": float(train_m.get("mask_p50", 0.0)),
+                            "train_mask_p90": float(train_m.get("mask_p90", 0.0)),
+                            "train_mask_precision_at_k": float(train_m.get("mask_precision_at_k", 0.0)),
+                            "train_mask_recall_at_k": float(train_m.get("mask_recall_at_k", 0.0)),
+                            "train_mask_auprc": float(train_m.get("mask_auprc", 0.0)),
                             "train_vel_count": int(train_c.get("vel", 0)),
                             "train_acc_count": int(train_c.get("acc", 0)),
                             "train_full_log_count": int(train_c.get("full_log", 0)),
                             "train_zero_log_count": int(train_c.get("zero_log", 0)),
                             "train_delta_log_count": int(train_c.get("delta_log", 0)),
                             "train_density_count": int(train_c.get("density", 0)),
+                            "train_mask_diag_count": int(train_c.get("mask_diag", 0)),
                             "val_manifold": float(val_m.get("manifold", 0.0)),
                             "val_vel": float(val_m.get("vel", 0.0)),
                             "val_acc": float(val_m.get("acc", 0.0)),
@@ -1795,12 +1980,21 @@ class CLGTrainer:
                             "val_zero_log": float(val_m.get("zero_log", 0.0)),
                             "val_delta_log": float(val_m.get("delta_log", 0.0)),
                             "val_density": float(val_m.get("density", 0.0)),
+                            "val_mask_ratio": float(val_m.get("mask_ratio", 0.0)),
+                            "val_mask_mean_p": float(val_m.get("mask_mean_p", 0.0)),
+                            "val_mask_p10": float(val_m.get("mask_p10", 0.0)),
+                            "val_mask_p50": float(val_m.get("mask_p50", 0.0)),
+                            "val_mask_p90": float(val_m.get("mask_p90", 0.0)),
+                            "val_mask_precision_at_k": float(val_m.get("mask_precision_at_k", 0.0)),
+                            "val_mask_recall_at_k": float(val_m.get("mask_recall_at_k", 0.0)),
+                            "val_mask_auprc": float(val_m.get("mask_auprc", 0.0)),
                             "val_vel_count": int(val_c.get("vel", 0)),
                             "val_acc_count": int(val_c.get("acc", 0)),
                             "val_full_log_count": int(val_c.get("full_log", 0)),
                             "val_zero_log_count": int(val_c.get("zero_log", 0)),
                             "val_delta_log_count": int(val_c.get("delta_log", 0)),
                             "val_density_count": int(val_c.get("density", 0)),
+                            "val_mask_diag_count": int(val_c.get("mask_diag", 0)),
                             "enable_vel": int(epoch >= self.warmup_manifold_epochs),
                             "enable_acc": int(epoch >= self.warmup_vel_epochs),
                             "lambda_manifold": float(self.lambda_manifold),
@@ -1815,6 +2009,11 @@ class CLGTrainer:
                             "density_warmup_epochs": int(self.density_warmup_epochs),
                             "density_ramp_epochs": int(self.density_ramp_epochs),
                             "density_factor": float(density_factor),
+                            "edge_loss": str(self.edge_loss),
+                            "edge_pos_weight": float(self.edge_pos_weight),
+                            "focal_gamma": float(self.focal_gamma),
+                            "focal_alpha": float(self.focal_alpha) if self.focal_alpha is not None else float("nan"),
+                            "compute_mask_auprc": int(self.compute_mask_auprc),
                             "zero_log_warmup_epochs": int(self.zero_log_warmup_epochs),
                             "zero_log_ramp_epochs": int(self.zero_log_ramp_epochs),
                             "zero_log_factor": float(zero_log_factor),

@@ -281,6 +281,31 @@ bash scripts/submit_clg_ode_density_10exp_batch.sh
 
 本轮实验结果解读见：`docs/reports/clg_ode_density_convergence_fold0_20260120.md`。
 
+## mask 根因定位实验（10 个任务）
+
+目标：不再盲扫 `lambda_density`，而是定位：
+
+- `sum(p_hat)/k` 是不是长期 `>>1`（过稠密，通常是 `L_edge` 推出来的）
+- 即使密度对齐了，top-k 位置是否正确（`precision@k/recall@k/AUPRC`）
+
+批量提交（10 个实验，用户执行）：
+
+```bash
+bash scripts/submit_clg_ode_mask_rootcause_10exp_batch.sh
+```
+
+包含：
+
+- 1 个诊断基线：`scripts/submit_clg_ode_maskdiag_fold0.sh`（输出 `mask_ratio/mask_mean_p/mask_p10/p50/p90/precision@k/recall@k/AUPRC`）
+- 9 个网格：`pos_weight ∈ {1,2,5}` × `lambda_density ∈ {0,0.01,0.05}`（见 `scripts/submit_clg_ode_posweight_density_grid_fold0_batch.sh`）
+- 1 个 focal 对照：`scripts/submit_clg_ode_focal_density_fold0.sh`（作为替代“调 pos_weight”的方案）
+
+诊断指标写入每个 run 的 `metrics.csv`：
+
+- `train_mask_ratio/val_mask_ratio`（`sum(p_hat)/k`，上三角定义一致）
+- `train_mask_p10/p50/p90`（`p_hat` 分位数）
+- `train_mask_precision_at_k/val_mask_precision_at_k`、`train_mask_auprc/val_mask_auprc`
+
 可选环境变量（不改脚本也能快速调整）：
 `FOLD_ID=0`，`MAX_EPOCHS=8`，`PATIENCE=3`，`BATCH_SIZE=2`，`TOPO_SCALE_Q=0.9`，`TOPO_WARMUP_FRAC=0.2`，`RUN_TAG=smoke`。
 

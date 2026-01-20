@@ -12,6 +12,23 @@ def edge_bce_loss(
     weight = torch.tensor(pos_weight, device=logits.device)
     return F.binary_cross_entropy_with_logits(logits, target, pos_weight=weight)
 
+def edge_focal_loss_with_logits(
+    logits: torch.Tensor,
+    target: torch.Tensor,
+    gamma: float = 2.0,
+    alpha: float | None = None,
+) -> torch.Tensor:
+    target = target.to(dtype=logits.dtype)
+    bce = F.binary_cross_entropy_with_logits(logits, target, reduction="none")
+    p = torch.sigmoid(logits)
+    pt = target * p + (1.0 - target) * (1.0 - p)
+    modulating = (1.0 - pt) ** float(gamma)
+    loss = modulating * bce
+    if alpha is not None:
+        alpha_t = target * float(alpha) + (1.0 - target) * (1.0 - float(alpha))
+        loss = alpha_t * loss
+    return loss.mean()
+
 
 def weight_huber_loss(
     pred_log: torch.Tensor,
