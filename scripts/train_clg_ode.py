@@ -199,6 +199,42 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Max magnitude for log-space residual (tanh cap).",
     )
     parser.add_argument(
+        "--fixed_support",
+        action="store_true",
+        help="Enable fixed-support SC prediction: inherit A0 mask and prevent new edges from the main residual branch.",
+    )
+    parser.add_argument(
+        "--innovation_enabled",
+        action="store_true",
+        help="Enable conservative innovation (new-edge module). Requires --fixed_support.",
+    )
+    parser.add_argument("--innovation_topm", type=int, default=400)
+    parser.add_argument("--innovation_k_new", type=int, default=80)
+    parser.add_argument("--innovation_tau", type=float, default=0.10)
+    parser.add_argument("--innovation_delta_quantile", type=float, default=0.95)
+    parser.add_argument(
+        "--innovation_dt_scale_years",
+        type=float,
+        default=1.0,
+        help="dt gate scale in years: g(dt)=min(1, dt/scale). (12 months => 1.0 year)",
+    )
+    parser.add_argument("--innovation_focal_gamma", type=float, default=2.0)
+    parser.add_argument("--innovation_focal_alpha", type=float, default=0.25)
+    parser.add_argument(
+        "--lambda_new_sparse",
+        type=float,
+        default=0.10,
+        help="Weight for mean(q) sparsity penalty over innovation candidate edges.",
+    )
+    parser.add_argument("--new_sparse_warmup_epochs", type=int, default=10)
+    parser.add_argument("--new_sparse_ramp_epochs", type=int, default=10)
+    parser.add_argument(
+        "--lambda_new_reg",
+        type=float,
+        default=0.0,
+        help="Optional weight regression on true new edges within candidate set.",
+    )
+    parser.add_argument(
         "--run_name",
         type=str,
         default="",
@@ -335,6 +371,19 @@ def main() -> None:
         residual_skip=args.residual_skip,
         residual_tau=args.residual_tau,
         residual_cap=args.residual_cap,
+        fixed_support=args.fixed_support,
+        innovation_enabled=args.innovation_enabled,
+        innovation_topm=args.innovation_topm,
+        innovation_k_new=args.innovation_k_new,
+        innovation_tau=args.innovation_tau,
+        innovation_delta_quantile=args.innovation_delta_quantile,
+        innovation_dt_scale_years=args.innovation_dt_scale_years,
+        innovation_focal_gamma=args.innovation_focal_gamma,
+        innovation_focal_alpha=args.innovation_focal_alpha,
+        lambda_new_sparse=args.lambda_new_sparse,
+        new_sparse_warmup_epochs=args.new_sparse_warmup_epochs,
+        new_sparse_ramp_epochs=args.new_sparse_ramp_epochs,
+        lambda_new_reg=args.lambda_new_reg,
         solver_steps=args.solver_steps,
         cv_folds=args.cv_folds,
         cv_fold=None if args.cv_fold < 0 else args.cv_fold,

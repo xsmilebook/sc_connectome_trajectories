@@ -261,6 +261,18 @@ bash scripts/submit_clg_ode_mask_fold0_batch.sh
 
 对应结果解读见：`docs/reports/clg_ode_mask_fold0_20260119.md`。
 
+Fixed-support + 保守新增边（fold0，用户提交；推荐交付版默认口径）：
+
+```bash
+sbatch scripts/submit_clg_ode_fixedsupport_innovation_fold0.sh
+```
+
+说明：
+
+- `--fixed_support`：主干仅在 `A0>0` 支持集上学习/预测，避免无约束稠密化。
+- `--innovation_enabled`：仅在 `A0=0` 的边上做候选 TopM 与 TopK(K_new) 放行（保守新增边）。
+- 训练期会在 `metrics.csv` 追加记录：`train_new_edge/train_new_sparse/train_new_reg/train_new_q_mean/train_new_kept_mean`（以及对应的 `val_*`）。
+
 ## density 收敛性实验（10 个任务）
 
 目标：让 `lambda_density` 这条线**可收敛**（更长训练、更温和、更对齐 early stopping 指标），避免“刚起效一点就被 early stop 掐断”。

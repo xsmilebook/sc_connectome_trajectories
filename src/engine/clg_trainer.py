@@ -70,6 +70,19 @@ class CLGTrainer:
         residual_skip: bool = False,
         residual_tau: float = 1.0,
         residual_cap: float = 0.5,
+        fixed_support: bool = False,
+        innovation_enabled: bool = False,
+        innovation_topm: int = 400,
+        innovation_k_new: int = 80,
+        innovation_tau: float = 0.10,
+        innovation_delta_quantile: float = 0.95,
+        innovation_dt_scale_years: float = 1.0,
+        innovation_focal_gamma: float = 2.0,
+        innovation_focal_alpha: float = 0.25,
+        lambda_new_sparse: float = 0.10,
+        new_sparse_warmup_epochs: int = 10,
+        new_sparse_ramp_epochs: int = 10,
+        lambda_new_reg: float = 0.0,
         lambda_manifold: float = 1.0,
         lambda_vel: float = 0.1,
         lambda_acc: float = 0.05,
@@ -139,6 +152,19 @@ class CLGTrainer:
         self.residual_skip = bool(residual_skip)
         self.residual_tau = float(residual_tau)
         self.residual_cap = float(residual_cap)
+        self.fixed_support = bool(fixed_support)
+        self.innovation_enabled = bool(innovation_enabled)
+        self.innovation_topm = int(innovation_topm)
+        self.innovation_k_new = int(innovation_k_new)
+        self.innovation_tau = float(innovation_tau)
+        self.innovation_delta_quantile = float(innovation_delta_quantile)
+        self.innovation_dt_scale_years = float(innovation_dt_scale_years)
+        self.innovation_focal_gamma = float(innovation_focal_gamma)
+        self.innovation_focal_alpha = float(innovation_focal_alpha)
+        self.lambda_new_sparse = float(lambda_new_sparse)
+        self.new_sparse_warmup_epochs = int(new_sparse_warmup_epochs)
+        self.new_sparse_ramp_epochs = int(new_sparse_ramp_epochs)
+        self.lambda_new_reg = float(lambda_new_reg)
         self.lambda_manifold = lambda_manifold
         self.lambda_vel = lambda_vel
         self.lambda_acc = lambda_acc
@@ -160,6 +186,21 @@ class CLGTrainer:
         scope = gradnorm_scope.strip().lower()
         if scope not in {"manifold_topo", "none"}:
             raise ValueError(f"Unsupported gradnorm_scope: {gradnorm_scope}")
+
+        if self.fixed_support and not self.residual_skip:
+            raise ValueError("fixed_support requires residual_skip (log-space residual baseline).")
+        if self.innovation_enabled and not self.fixed_support:
+            raise ValueError("innovation_enabled is only supported when fixed_support is enabled.")
+        if self.innovation_topm <= 0:
+            raise ValueError("innovation_topm must be > 0")
+        if self.innovation_k_new < 0:
+            raise ValueError("innovation_k_new must be >= 0")
+        if self.innovation_tau <= 0:
+            raise ValueError("innovation_tau must be > 0")
+        if not (0.0 < self.innovation_delta_quantile <= 1.0):
+            raise ValueError("innovation_delta_quantile must be in (0, 1]")
+        if self.innovation_dt_scale_years <= 0:
+            raise ValueError("innovation_dt_scale_years must be > 0")
         self.gradnorm_scope = scope
         self.gradnorm_enabled = scope != "none"
         self.gradnorm_alpha = float(gradnorm_alpha)
@@ -648,6 +689,123 @@ class CLGTrainer:
         return float(min(1.0, (epoch - warmup_epochs + 1) / float(ramp_epochs)))
 
     @staticmethod
+    def _dt_gate(dt_years: float, scale_years: float) -> float:
+        if not np.isfinite(dt_years) or dt_years <= 0:
+            return 0.0
+        if scale_years <= 0:
+            return 1.0
+        return float(min(1.0, dt_years / scale_years))
+
+    @staticmethod
+    def _support_weight_loss(
+        pred_weight: torch.Tensor,
+        true_raw: torch.Tensor,
+        a0_raw: torch.Tensor,
+        triu_idx: Tuple[np.ndarray, np.ndarray],
+    ) -> torch.Tensor:
+        pred_log = torch.log1p(torch.clamp(pred_weight, min=0.0))
+        true_log = torch.log1p(torch.clamp(true_raw, min=0.0))
+        pred_vec = pred_log[triu_idx[0], triu_idx[1]]
+        true_vec = true_log[triu_idx[0], triu_idx[1]]
+        mask = ((true_raw[triu_idx[0], triu_idx[1]] > 0) & (a0_raw[triu_idx[0], triu_idx[1]] > 0)).to(
+            dtype=pred_vec.dtype
+        )
+        return weight_huber_loss(pred_vec, true_vec, mask)
+
+    def _innovation_step(
+        self,
+        pred_support: torch.Tensor,
+        pred_new_dense: torch.Tensor,
+        l_new: torch.Tensor,
+        a0_raw: torch.Tensor,
+        a_true_raw: torch.Tensor,
+        dt_years: float,
+        triu_idx: Tuple[np.ndarray, np.ndarray],
+        epoch: int,
+    ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor | float]]:
+        """
+        Conservative innovation for edges where a0_raw == 0:
+        - candidate TopM by raw innovation logit l_new (upper-tri only)
+        - per-sample threshold δ = Pq(l_new over candidate TopM)
+        - q = g(dt)*sigmoid((l_new - δ)/tau)
+        - hard cap: keep TopK(K_new) by q
+        Returns:
+          pred_weight_final (NxN) and a dict with innovation losses/diagnostics.
+        """
+        out: Dict[str, torch.Tensor | float] = {
+            "loss_new_edge": torch.tensor(0.0, device=pred_support.device),
+            "loss_new_sparse": torch.tensor(0.0, device=pred_support.device),
+            "loss_new_reg": torch.tensor(0.0, device=pred_support.device),
+            "new_q_mean": 0.0,
+            "new_kept": 0.0,
+        }
+        if not self.innovation_enabled or self.innovation_k_new == 0:
+            return pred_support, out
+
+        gate = self._dt_gate(dt_years, self.innovation_dt_scale_years)
+        if gate <= 0:
+            return pred_support, out
+
+        if epoch < self.new_sparse_warmup_epochs:
+            return pred_support, out
+
+        i_idx, j_idx = triu_idx
+        l_vec = l_new[i_idx, j_idx]
+        pool_mask = a0_raw[i_idx, j_idx] <= 0
+        pool_pos = torch.nonzero(pool_mask, as_tuple=False).squeeze(1)
+        if pool_pos.numel() == 0:
+            return pred_support, out
+
+        topm = min(self.innovation_topm, int(pool_pos.numel()))
+        pool_vals = l_vec[pool_pos]
+        top = torch.topk(pool_vals, k=topm, largest=True)
+        cand_pos = pool_pos[top.indices]
+        cand_vals = top.values
+
+        delta = torch.quantile(cand_vals.detach(), q=float(self.innovation_delta_quantile))
+        logits_new = (l_vec[cand_pos] - delta) / float(self.innovation_tau)
+        q = float(gate) * torch.sigmoid(logits_new)
+
+        out["new_q_mean"] = float(q.mean().detach().item())
+
+        keep_k = min(int(self.innovation_k_new), int(q.numel()))
+        if keep_k <= 0:
+            return pred_support, out
+
+        keep = torch.topk(q.detach(), k=keep_k, largest=True)
+        keep_pos = cand_pos[keep.indices]
+
+        mask_new = torch.zeros_like(pred_support)
+        mask_new[i_idx[keep_pos], j_idx[keep_pos]] = 1.0
+        mask_new = mask_new + mask_new.transpose(-1, -2)
+
+        pred_weight = pred_support + mask_new * torch.clamp(pred_new_dense, min=0.0)
+        pred_weight = pred_weight - torch.diag_embed(torch.diagonal(pred_weight, dim1=-2, dim2=-1))
+
+        y_new_vec = ((a_true_raw[i_idx, j_idx] > 0) & (a0_raw[i_idx, j_idx] <= 0)).to(dtype=logits_new.dtype)
+        y_cand = y_new_vec[cand_pos]
+        loss_edge = edge_focal_loss_with_logits(
+            logits_new,
+            y_cand,
+            gamma=self.innovation_focal_gamma,
+            alpha=self.innovation_focal_alpha,
+        )
+        out["loss_new_edge"] = float(gate) * loss_edge
+
+        sparse_factor = self._linear_warmup_factor(epoch, self.new_sparse_warmup_epochs, self.new_sparse_ramp_epochs)
+        out["loss_new_sparse"] = float(self.lambda_new_sparse) * float(sparse_factor) * q.mean()
+
+        if self.lambda_new_reg > 0:
+            pred_new_vec = torch.clamp(pred_new_dense[i_idx, j_idx], min=0.0)[cand_pos]
+            true_new_vec = torch.clamp(a_true_raw[i_idx, j_idx], min=0.0)[cand_pos]
+            pred_new_log = torch.log1p(pred_new_vec)
+            true_new_log = torch.log1p(true_new_vec)
+            out["loss_new_reg"] = float(self.lambda_new_reg) * weight_huber_loss(pred_new_log, true_new_log, y_cand)
+
+        out["new_kept"] = float(keep_k)
+        return pred_weight, out
+
+    @staticmethod
     def _density_loss(
         p_hat: torch.Tensor,
         true_raw: torch.Tensor,
@@ -1044,6 +1202,11 @@ class CLGTrainer:
         z_sum = 0.0
         d_sum = 0.0
         den_sum = 0.0
+        new_edge_sum = 0.0
+        new_sparse_sum = 0.0
+        new_reg_sum = 0.0
+        new_q_sum = 0.0
+        new_kept_sum = 0.0
         mask_ratio_sum = 0.0
         mask_mean_p_sum = 0.0
         mask_p10_sum = 0.0
@@ -1060,6 +1223,10 @@ class CLGTrainer:
         z_count = 0
         d_count = 0
         den_count = 0
+        new_edge_count = 0
+        new_sparse_count = 0
+        new_reg_count = 0
+        new_diag_count = 0
         mask_count = 0
         topo_raw_values: List[float] = []
         for batch in loader:
@@ -1080,6 +1247,11 @@ class CLGTrainer:
             z_sum += metrics.get("zero_log_sum", 0.0)
             d_sum += metrics.get("delta_log_sum", 0.0)
             den_sum += metrics.get("density_sum", 0.0)
+            new_edge_sum += metrics.get("new_edge_sum", 0.0)
+            new_sparse_sum += metrics.get("new_sparse_sum", 0.0)
+            new_reg_sum += metrics.get("new_reg_sum", 0.0)
+            new_q_sum += metrics.get("new_q_mean_sum", 0.0)
+            new_kept_sum += metrics.get("new_kept_sum", 0.0)
             mask_ratio_sum += metrics.get("mask_ratio", 0.0)
             mask_mean_p_sum += metrics.get("mask_mean_p", 0.0)
             mask_p10_sum += metrics.get("mask_p10", 0.0)
@@ -1096,6 +1268,10 @@ class CLGTrainer:
             z_count += metrics.get("zero_log_count", 0)
             d_count += metrics.get("delta_log_count", 0)
             den_count += metrics.get("density_count", 0)
+            new_edge_count += metrics.get("new_edge_count", 0)
+            new_sparse_count += metrics.get("new_sparse_count", 0)
+            new_reg_count += metrics.get("new_reg_count", 0)
+            new_diag_count += metrics.get("new_diag_count", 0)
             mask_count += metrics.get("mask_diag_count", 0)
             if self.is_main:
                 raw_vals = metrics.get("topo_raw_values")
@@ -1110,6 +1286,11 @@ class CLGTrainer:
         z_sum, z_count = self._reduce_sum_count(z_sum, z_count)
         d_sum, d_count = self._reduce_sum_count(d_sum, d_count)
         den_sum, den_count = self._reduce_sum_count(den_sum, den_count)
+        new_edge_sum, new_edge_count = self._reduce_sum_count(new_edge_sum, new_edge_count)
+        new_sparse_sum, new_sparse_count = self._reduce_sum_count(new_sparse_sum, new_sparse_count)
+        new_reg_sum, new_reg_count = self._reduce_sum_count(new_reg_sum, new_reg_count)
+        new_q_sum, new_diag_count = self._reduce_sum_count(new_q_sum, new_diag_count)
+        new_kept_sum, _ = self._reduce_sum_count(new_kept_sum, new_diag_count)
         mask_ratio_sum, mask_count = self._reduce_sum_count(mask_ratio_sum, mask_count)
         mask_mean_p_sum, _ = self._reduce_sum_count(mask_mean_p_sum, mask_count)
         mask_p10_sum, _ = self._reduce_sum_count(mask_p10_sum, mask_count)
@@ -1129,6 +1310,11 @@ class CLGTrainer:
                 "zero_log": (z_sum / z_count) if z_count > 0 else 0.0,
                 "delta_log": (d_sum / d_count) if d_count > 0 else 0.0,
                 "density": (den_sum / den_count) if den_count > 0 else 0.0,
+                "new_edge": (new_edge_sum / new_edge_count) if new_edge_count > 0 else 0.0,
+                "new_sparse": (new_sparse_sum / new_sparse_count) if new_sparse_count > 0 else 0.0,
+                "new_reg": (new_reg_sum / new_reg_count) if new_reg_count > 0 else 0.0,
+                "new_q_mean": (new_q_sum / new_diag_count) if new_diag_count > 0 else 0.0,
+                "new_kept_mean": (new_kept_sum / new_diag_count) if new_diag_count > 0 else 0.0,
                 "mask_ratio": (mask_ratio_sum / mask_count) if mask_count > 0 else 0.0,
                 "mask_mean_p": (mask_mean_p_sum / mask_count) if mask_count > 0 else 0.0,
                 "mask_p10": (mask_p10_sum / mask_count) if mask_count > 0 else 0.0,
@@ -1147,6 +1333,10 @@ class CLGTrainer:
                 "zero_log": int(z_count),
                 "delta_log": int(d_count),
                 "density": int(den_count),
+                "new_edge": int(new_edge_count),
+                "new_sparse": int(new_sparse_count),
+                "new_reg": int(new_reg_count),
+                "new_diag": int(new_diag_count),
                 "mask_diag": int(mask_count),
             }
         if self.is_main:
@@ -1175,6 +1365,11 @@ class CLGTrainer:
         z_sum = 0.0
         d_sum = 0.0
         den_sum = 0.0
+        new_edge_sum = 0.0
+        new_sparse_sum = 0.0
+        new_reg_sum = 0.0
+        new_q_sum = 0.0
+        new_kept_sum = 0.0
         mask_ratio_sum = 0.0
         mask_mean_p_sum = 0.0
         mask_p10_sum = 0.0
@@ -1191,6 +1386,10 @@ class CLGTrainer:
         z_count = 0
         d_count = 0
         den_count = 0
+        new_edge_count = 0
+        new_sparse_count = 0
+        new_reg_count = 0
+        new_diag_count = 0
         mask_count = 0
         with torch.no_grad():
             for batch in loader:
@@ -1208,6 +1407,11 @@ class CLGTrainer:
                 z_sum += metrics.get("zero_log_sum", 0.0)
                 d_sum += metrics.get("delta_log_sum", 0.0)
                 den_sum += metrics.get("density_sum", 0.0)
+                new_edge_sum += metrics.get("new_edge_sum", 0.0)
+                new_sparse_sum += metrics.get("new_sparse_sum", 0.0)
+                new_reg_sum += metrics.get("new_reg_sum", 0.0)
+                new_q_sum += metrics.get("new_q_mean_sum", 0.0)
+                new_kept_sum += metrics.get("new_kept_sum", 0.0)
                 mask_ratio_sum += metrics.get("mask_ratio", 0.0)
                 mask_mean_p_sum += metrics.get("mask_mean_p", 0.0)
                 mask_p10_sum += metrics.get("mask_p10", 0.0)
@@ -1224,6 +1428,10 @@ class CLGTrainer:
                 z_count += metrics.get("zero_log_count", 0)
                 d_count += metrics.get("delta_log_count", 0)
                 den_count += metrics.get("density_count", 0)
+                new_edge_count += metrics.get("new_edge_count", 0)
+                new_sparse_count += metrics.get("new_sparse_count", 0)
+                new_reg_count += metrics.get("new_reg_count", 0)
+                new_diag_count += metrics.get("new_diag_count", 0)
                 mask_count += metrics.get("mask_diag_count", 0)
         m_sum, m_count = self._reduce_sum_count(m_sum, m_count)
         v_sum, v_count = self._reduce_sum_count(v_sum, v_count)
@@ -1234,6 +1442,11 @@ class CLGTrainer:
         z_sum, z_count = self._reduce_sum_count(z_sum, z_count)
         d_sum, d_count = self._reduce_sum_count(d_sum, d_count)
         den_sum, den_count = self._reduce_sum_count(den_sum, den_count)
+        new_edge_sum, new_edge_count = self._reduce_sum_count(new_edge_sum, new_edge_count)
+        new_sparse_sum, new_sparse_count = self._reduce_sum_count(new_sparse_sum, new_sparse_count)
+        new_reg_sum, new_reg_count = self._reduce_sum_count(new_reg_sum, new_reg_count)
+        new_q_sum, new_diag_count = self._reduce_sum_count(new_q_sum, new_diag_count)
+        new_kept_sum, _ = self._reduce_sum_count(new_kept_sum, new_diag_count)
         mask_ratio_sum, mask_count = self._reduce_sum_count(mask_ratio_sum, mask_count)
         mask_mean_p_sum, _ = self._reduce_sum_count(mask_mean_p_sum, mask_count)
         mask_p10_sum, _ = self._reduce_sum_count(mask_p10_sum, mask_count)
@@ -1253,6 +1466,11 @@ class CLGTrainer:
                 "zero_log": (z_sum / z_count) if z_count > 0 else 0.0,
                 "delta_log": (d_sum / d_count) if d_count > 0 else 0.0,
                 "density": (den_sum / den_count) if den_count > 0 else 0.0,
+                "new_edge": (new_edge_sum / new_edge_count) if new_edge_count > 0 else 0.0,
+                "new_sparse": (new_sparse_sum / new_sparse_count) if new_sparse_count > 0 else 0.0,
+                "new_reg": (new_reg_sum / new_reg_count) if new_reg_count > 0 else 0.0,
+                "new_q_mean": (new_q_sum / new_diag_count) if new_diag_count > 0 else 0.0,
+                "new_kept_mean": (new_kept_sum / new_diag_count) if new_diag_count > 0 else 0.0,
                 "mask_ratio": (mask_ratio_sum / mask_count) if mask_count > 0 else 0.0,
                 "mask_mean_p": (mask_mean_p_sum / mask_count) if mask_count > 0 else 0.0,
                 "mask_p10": (mask_p10_sum / mask_count) if mask_count > 0 else 0.0,
@@ -1271,6 +1489,10 @@ class CLGTrainer:
                 "zero_log": int(z_count),
                 "delta_log": int(d_count),
                 "density": int(den_count),
+                "new_edge": int(new_edge_count),
+                "new_sparse": int(new_sparse_count),
+                "new_reg": int(new_reg_count),
+                "new_diag": int(new_diag_count),
                 "mask_diag": int(mask_count),
             }
         return self._reduce_loss(total_loss, count)
@@ -1317,6 +1539,12 @@ class CLGTrainer:
         loss_zero_log = []
         loss_delta_log = []
         loss_density = []
+        loss_new_edge = []
+        loss_new_sparse = []
+        loss_new_reg = []
+        new_q_sum = 0.0
+        new_kept_sum = 0.0
+        new_diag_count = 0
         mask_diag = []
 
         for b, length in enumerate(lengths):
@@ -1377,16 +1605,24 @@ class CLGTrainer:
                 cov,
                 use_mu=True,
             )
-            a_pred_i = self._expected_weight(outputs_denoise.a_logit[0, 0], outputs_denoise.a_weight[0, 0])
+            if self.fixed_support:
+                a_pred_i = torch.clamp(outputs_denoise.a_weight[0, 0], min=0.0)
+            else:
+                a_pred_i = self._expected_weight(outputs_denoise.a_logit[0, 0], outputs_denoise.a_weight[0, 0])
             pred_sparse_i, _ = self._sparsify_pred(a_pred_i, a_raw[b, i], triu_idx)
-            lx, le, lw = self._recon_losses(
-                outputs_denoise.a_logit[:, 0],
-                pred_sparse_i.unsqueeze(0),
-                outputs_denoise.x_hat[:, 0],
-                a_raw[b, i].unsqueeze(0),
-                x_i.unsqueeze(0),
-                triu_idx,
-            )
+            lx = torch.mean((outputs_denoise.x_hat[:, 0] - x_i.unsqueeze(0)) ** 2)
+            if self.fixed_support:
+                le = torch.tensor(0.0, device=self.device)
+                lw = self._support_weight_loss(pred_sparse_i, a_raw[b, i], a_raw[b, i], triu_idx)
+            else:
+                _, le, lw = self._recon_losses(
+                    outputs_denoise.a_logit[:, 0],
+                    pred_sparse_i.unsqueeze(0),
+                    outputs_denoise.x_hat[:, 0],
+                    a_raw[b, i].unsqueeze(0),
+                    x_i.unsqueeze(0),
+                    triu_idx,
+                )
             manifold = lx + le + self.lambda_weight * lw
             if self.lambda_full_log_mse > 0:
                 loss_full_log.append(
@@ -1436,20 +1672,48 @@ class CLGTrainer:
                     cov,
                     use_mu=True,
                 )
-                a_pred_j = self._expected_weight(outputs_fore.a_logit[0, -1], outputs_fore.a_weight[0, -1])
+                if self.fixed_support:
+                    if outputs_fore.a_weight_new is None or outputs_fore.l_new is None:
+                        raise RuntimeError("Model outputs missing a_weight_new/l_new required for innovation.")
+                    a_pred_j = torch.clamp(outputs_fore.a_weight[0, -1], min=0.0)
+                    a_pred_j, innov = self._innovation_step(
+                        pred_support=a_pred_j,
+                        pred_new_dense=torch.clamp(outputs_fore.a_weight_new[0, -1], min=0.0),
+                        l_new=outputs_fore.l_new[0, -1],
+                        a0_raw=a_raw[b, i],
+                        a_true_raw=a_raw[b, j],
+                        dt_years=float(dt_ij),
+                        triu_idx=triu_idx,
+                        epoch=epoch,
+                    )
+                    if float(innov["new_kept"]) > 0:
+                        loss_new_edge.append(innov["loss_new_edge"])
+                        loss_new_sparse.append(innov["loss_new_sparse"])
+                        loss_new_reg.append(innov["loss_new_reg"])
+                        new_q_sum += float(innov["new_q_mean"])
+                        new_kept_sum += float(innov["new_kept"])
+                        new_diag_count += 1
+                else:
+                    a_pred_j = self._expected_weight(outputs_fore.a_logit[0, -1], outputs_fore.a_weight[0, -1])
                 pred_sparse_j, _ = self._sparsify_pred(a_pred_j, a_raw[b, j], triu_idx)
-                lxj, lej, lwj = self._recon_losses(
-                    outputs_fore.a_logit[:, -1],
-                    pred_sparse_j.unsqueeze(0),
-                    outputs_fore.x_hat[:, -1],
-                    a_raw[b, j].unsqueeze(0),
-                    self._zscore(
-                        self._apply_volume_norm_torch(x[b, j], icv[b, j], volume_indices),
-                        stats.morph_mean,
-                        stats.morph_std,
-                    ).unsqueeze(0),
-                    triu_idx,
+                x_j_true = self._zscore(
+                    self._apply_volume_norm_torch(x[b, j], icv[b, j], volume_indices),
+                    stats.morph_mean,
+                    stats.morph_std,
                 )
+                lxj = torch.mean((outputs_fore.x_hat[:, -1] - x_j_true.unsqueeze(0)) ** 2)
+                if self.fixed_support:
+                    lej = torch.tensor(0.0, device=self.device)
+                    lwj = self._support_weight_loss(pred_sparse_j, a_raw[b, j], a_raw[b, i], triu_idx)
+                else:
+                    _, lej, lwj = self._recon_losses(
+                        outputs_fore.a_logit[:, -1],
+                        pred_sparse_j.unsqueeze(0),
+                        outputs_fore.x_hat[:, -1],
+                        a_raw[b, j].unsqueeze(0),
+                        x_j_true.unsqueeze(0),
+                        triu_idx,
+                    )
                 manifold = manifold + (lxj + lej + self.lambda_weight * lwj)
                 if self.lambda_full_log_mse > 0:
                     loss_full_log.append(
@@ -1508,20 +1772,48 @@ class CLGTrainer:
                     cov,
                     use_mu=True,
                 )
-                a_pred_k = self._expected_weight(outputs_fore_k.a_logit[0, -1], outputs_fore_k.a_weight[0, -1])
+                if self.fixed_support:
+                    if outputs_fore_k.a_weight_new is None or outputs_fore_k.l_new is None:
+                        raise RuntimeError("Model outputs missing a_weight_new/l_new required for innovation.")
+                    a_pred_k = torch.clamp(outputs_fore_k.a_weight[0, -1], min=0.0)
+                    a_pred_k, innov = self._innovation_step(
+                        pred_support=a_pred_k,
+                        pred_new_dense=torch.clamp(outputs_fore_k.a_weight_new[0, -1], min=0.0),
+                        l_new=outputs_fore_k.l_new[0, -1],
+                        a0_raw=a_raw[b, i],
+                        a_true_raw=a_raw[b, k],
+                        dt_years=float(dt_ik),
+                        triu_idx=triu_idx,
+                        epoch=epoch,
+                    )
+                    if float(innov["new_kept"]) > 0:
+                        loss_new_edge.append(0.5 * innov["loss_new_edge"])
+                        loss_new_sparse.append(0.5 * innov["loss_new_sparse"])
+                        loss_new_reg.append(0.5 * innov["loss_new_reg"])
+                        new_q_sum += float(innov["new_q_mean"])
+                        new_kept_sum += float(innov["new_kept"])
+                        new_diag_count += 1
+                else:
+                    a_pred_k = self._expected_weight(outputs_fore_k.a_logit[0, -1], outputs_fore_k.a_weight[0, -1])
                 pred_sparse_k, _ = self._sparsify_pred(a_pred_k, a_raw[b, k], triu_idx)
-                lxk, lek, lwk = self._recon_losses(
-                    outputs_fore_k.a_logit[:, -1],
-                    pred_sparse_k.unsqueeze(0),
-                    outputs_fore_k.x_hat[:, -1],
-                    a_raw[b, k].unsqueeze(0),
-                    self._zscore(
-                        self._apply_volume_norm_torch(x[b, k], icv[b, k], volume_indices),
-                        stats.morph_mean,
-                        stats.morph_std,
-                    ).unsqueeze(0),
-                    triu_idx,
+                x_k_true = self._zscore(
+                    self._apply_volume_norm_torch(x[b, k], icv[b, k], volume_indices),
+                    stats.morph_mean,
+                    stats.morph_std,
                 )
+                lxk = torch.mean((outputs_fore_k.x_hat[:, -1] - x_k_true.unsqueeze(0)) ** 2)
+                if self.fixed_support:
+                    lek = torch.tensor(0.0, device=self.device)
+                    lwk = self._support_weight_loss(pred_sparse_k, a_raw[b, k], a_raw[b, i], triu_idx)
+                else:
+                    _, lek, lwk = self._recon_losses(
+                        outputs_fore_k.a_logit[:, -1],
+                        pred_sparse_k.unsqueeze(0),
+                        outputs_fore_k.x_hat[:, -1],
+                        a_raw[b, k].unsqueeze(0),
+                        x_k_true.unsqueeze(0),
+                        triu_idx,
+                    )
                 manifold = manifold + 0.5 * (lxk + lek + self.lambda_weight * lwk)
                 if self.lambda_full_log_mse > 0:
                     loss_full_log.append(
@@ -1653,6 +1945,21 @@ class CLGTrainer:
             if loss_density
             else torch.tensor(0.0, device=self.device)
         )
+        mean_new_edge = (
+            torch.stack([t for t in loss_new_edge if isinstance(t, torch.Tensor)]).mean()
+            if loss_new_edge
+            else torch.tensor(0.0, device=self.device)
+        )
+        mean_new_sparse = (
+            torch.stack([t for t in loss_new_sparse if isinstance(t, torch.Tensor)]).mean()
+            if loss_new_sparse
+            else torch.tensor(0.0, device=self.device)
+        )
+        mean_new_reg = (
+            torch.stack([t for t in loss_new_reg if isinstance(t, torch.Tensor)]).mean()
+            if loss_new_reg
+            else torch.tensor(0.0, device=self.device)
+        )
         diag_keys = list(mask_diag[0].keys()) if mask_diag and mask_diag[0] else []
         diag_sums: Dict[str, float] = {k: 0.0 for k in diag_keys}
         diag_count = 0
@@ -1674,6 +1981,8 @@ class CLGTrainer:
             total = total + self.lambda_delta_log * mean_delta_log
         if self.lambda_density > 0 and density_factor > 0:
             total = total + (self.lambda_density * float(density_factor)) * mean_density
+        if self.innovation_enabled:
+            total = total + mean_new_edge + mean_new_sparse + mean_new_reg
         metrics = {
             "manifold_sum": float(mean_manifold.detach().item()) * max(len(loss_manifold), 1),
             "vel_sum": float(mean_vel.detach().item()) * max(len(loss_vel), 1),
@@ -1684,6 +1993,11 @@ class CLGTrainer:
             "zero_log_sum": float(mean_zero_log.detach().item()) * max(len(loss_zero_log), 1),
             "delta_log_sum": float(mean_delta_log.detach().item()) * max(len(loss_delta_log), 1),
             "density_sum": float(mean_density.detach().item()) * max(len(loss_density), 1),
+            "new_edge_sum": float(mean_new_edge.detach().item()) * max(len(loss_new_edge), 1),
+            "new_sparse_sum": float(mean_new_sparse.detach().item()) * max(len(loss_new_sparse), 1),
+            "new_reg_sum": float(mean_new_reg.detach().item()) * max(len(loss_new_reg), 1),
+            "new_q_mean_sum": float(new_q_sum),
+            "new_kept_sum": float(new_kept_sum),
             "manifold_count": int(len(loss_manifold)),
             "vel_count": int(len(loss_vel)),
             "acc_count": int(len(loss_acc)),
@@ -1692,6 +2006,10 @@ class CLGTrainer:
             "zero_log_count": int(len(loss_zero_log)),
             "delta_log_count": int(len(loss_delta_log)),
             "density_count": int(len(loss_density)),
+            "new_edge_count": int(len(loss_new_edge)),
+            "new_sparse_count": int(len(loss_new_sparse)),
+            "new_reg_count": int(len(loss_new_reg)),
+            "new_diag_count": int(new_diag_count),
             "topo_raw_values": topo_raw_values,
             "mask_diag_count": int(diag_count),
             "edge_loss": self.edge_loss,
@@ -1699,6 +2017,8 @@ class CLGTrainer:
             "focal_gamma": float(self.focal_gamma),
             "focal_alpha": float(self.focal_alpha) if self.focal_alpha is not None else float("nan"),
             "compute_mask_auprc": int(self.compute_mask_auprc),
+            "fixed_support": int(self.fixed_support),
+            "innovation_enabled": int(self.innovation_enabled),
         }
         for k, v in diag_means.items():
             metrics[k] = float(v)
@@ -1773,7 +2093,10 @@ class CLGTrainer:
                             cov,
                             use_mu=True,
                         )
-                        pred_weight = self._expected_weight(outputs.a_logit[0, 0], outputs.a_weight[0, 0])
+                        if self.fixed_support:
+                            pred_weight = torch.clamp(outputs.a_weight[0, 0], min=0.0)
+                        else:
+                            pred_weight = self._expected_weight(outputs.a_logit[0, 0], outputs.a_weight[0, 0])
                         true_raw = a_raw[b, i]
                     else:
                         age_j = float(ages[b, j].item())
@@ -1788,8 +2111,23 @@ class CLGTrainer:
                             cov,
                             use_mu=True,
                         )
-                        pred_weight = self._expected_weight(outputs.a_logit[0, -1], outputs.a_weight[0, -1])
                         true_raw = a_raw[b, j]
+                        if self.fixed_support:
+                            if outputs.a_weight_new is None or outputs.l_new is None:
+                                raise RuntimeError("Model outputs missing a_weight_new/l_new required for innovation.")
+                            pred_weight = torch.clamp(outputs.a_weight[0, -1], min=0.0)
+                            pred_weight, _ = self._innovation_step(
+                                pred_support=pred_weight,
+                                pred_new_dense=torch.clamp(outputs.a_weight_new[0, -1], min=0.0),
+                                l_new=outputs.l_new[0, -1],
+                                a0_raw=a_raw[b, i],
+                                a_true_raw=true_raw,
+                                dt_years=float(dt_ij),
+                                triu_idx=triu_idx,
+                                epoch=self.max_epochs,
+                            )
+                        else:
+                            pred_weight = self._expected_weight(outputs.a_logit[0, -1], outputs.a_weight[0, -1])
 
                     metrics = self._sc_metrics(pred_weight, true_raw, triu_idx)
                     for k, v in metrics.items():
@@ -1956,6 +2294,11 @@ class CLGTrainer:
                             "train_zero_log": float(train_m.get("zero_log", 0.0)),
                             "train_delta_log": float(train_m.get("delta_log", 0.0)),
                             "train_density": float(train_m.get("density", 0.0)),
+                            "train_new_edge": float(train_m.get("new_edge", 0.0)),
+                            "train_new_sparse": float(train_m.get("new_sparse", 0.0)),
+                            "train_new_reg": float(train_m.get("new_reg", 0.0)),
+                            "train_new_q_mean": float(train_m.get("new_q_mean", 0.0)),
+                            "train_new_kept_mean": float(train_m.get("new_kept_mean", 0.0)),
                             "train_mask_ratio": float(train_m.get("mask_ratio", 0.0)),
                             "train_mask_mean_p": float(train_m.get("mask_mean_p", 0.0)),
                             "train_mask_p10": float(train_m.get("mask_p10", 0.0)),
@@ -1970,6 +2313,10 @@ class CLGTrainer:
                             "train_zero_log_count": int(train_c.get("zero_log", 0)),
                             "train_delta_log_count": int(train_c.get("delta_log", 0)),
                             "train_density_count": int(train_c.get("density", 0)),
+                            "train_new_edge_count": int(train_c.get("new_edge", 0)),
+                            "train_new_sparse_count": int(train_c.get("new_sparse", 0)),
+                            "train_new_reg_count": int(train_c.get("new_reg", 0)),
+                            "train_new_diag_count": int(train_c.get("new_diag", 0)),
                             "train_mask_diag_count": int(train_c.get("mask_diag", 0)),
                             "val_manifold": float(val_m.get("manifold", 0.0)),
                             "val_vel": float(val_m.get("vel", 0.0)),
@@ -1980,6 +2327,11 @@ class CLGTrainer:
                             "val_zero_log": float(val_m.get("zero_log", 0.0)),
                             "val_delta_log": float(val_m.get("delta_log", 0.0)),
                             "val_density": float(val_m.get("density", 0.0)),
+                            "val_new_edge": float(val_m.get("new_edge", 0.0)),
+                            "val_new_sparse": float(val_m.get("new_sparse", 0.0)),
+                            "val_new_reg": float(val_m.get("new_reg", 0.0)),
+                            "val_new_q_mean": float(val_m.get("new_q_mean", 0.0)),
+                            "val_new_kept_mean": float(val_m.get("new_kept_mean", 0.0)),
                             "val_mask_ratio": float(val_m.get("mask_ratio", 0.0)),
                             "val_mask_mean_p": float(val_m.get("mask_mean_p", 0.0)),
                             "val_mask_p10": float(val_m.get("mask_p10", 0.0)),
@@ -1994,6 +2346,10 @@ class CLGTrainer:
                             "val_zero_log_count": int(val_c.get("zero_log", 0)),
                             "val_delta_log_count": int(val_c.get("delta_log", 0)),
                             "val_density_count": int(val_c.get("density", 0)),
+                            "val_new_edge_count": int(val_c.get("new_edge", 0)),
+                            "val_new_sparse_count": int(val_c.get("new_sparse", 0)),
+                            "val_new_reg_count": int(val_c.get("new_reg", 0)),
+                            "val_new_diag_count": int(val_c.get("new_diag", 0)),
                             "val_mask_diag_count": int(val_c.get("mask_diag", 0)),
                             "enable_vel": int(epoch >= self.warmup_manifold_epochs),
                             "enable_acc": int(epoch >= self.warmup_vel_epochs),
@@ -2006,6 +2362,19 @@ class CLGTrainer:
                             "lambda_zero_log": float(self.lambda_zero_log),
                             "lambda_delta_log": float(self.lambda_delta_log),
                             "lambda_density": float(self.lambda_density),
+                            "fixed_support": int(self.fixed_support),
+                            "innovation_enabled": int(self.innovation_enabled),
+                            "innovation_topm": int(self.innovation_topm),
+                            "innovation_k_new": int(self.innovation_k_new),
+                            "innovation_tau": float(self.innovation_tau),
+                            "innovation_delta_quantile": float(self.innovation_delta_quantile),
+                            "innovation_dt_scale_years": float(self.innovation_dt_scale_years),
+                            "innovation_focal_gamma": float(self.innovation_focal_gamma),
+                            "innovation_focal_alpha": float(self.innovation_focal_alpha),
+                            "lambda_new_sparse": float(self.lambda_new_sparse),
+                            "new_sparse_warmup_epochs": int(self.new_sparse_warmup_epochs),
+                            "new_sparse_ramp_epochs": int(self.new_sparse_ramp_epochs),
+                            "lambda_new_reg": float(self.lambda_new_reg),
                             "density_warmup_epochs": int(self.density_warmup_epochs),
                             "density_ramp_epochs": int(self.density_ramp_epochs),
                             "density_factor": float(density_factor),

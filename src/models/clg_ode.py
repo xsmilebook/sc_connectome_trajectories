@@ -19,6 +19,8 @@ class CLGOutput:
     logvar_morph: torch.Tensor
     mu_conn: torch.Tensor
     logvar_conn: torch.Tensor
+    a_weight_new: torch.Tensor | None = None
+    l_new: torch.Tensor | None = None
 
 
 class GraphEncoder(nn.Module):
@@ -101,6 +103,8 @@ class ConnDecoder(nn.Module):
         self.beta = nn.Parameter(torch.tensor(0.0))
         self.residual_scale = nn.Parameter(torch.tensor(1.0))
         self.residual_bias = nn.Parameter(torch.tensor(0.0))
+        self.alpha_new = nn.Parameter(torch.tensor(10.0))
+        self.delta_new = nn.Parameter(torch.tensor(0.0))
 
     def forward(
         self,
@@ -110,9 +114,11 @@ class ConnDecoder(nn.Module):
         residual_skip: bool = False,
         residual_tau: float = 1.0,
         residual_cap: float = 0.5,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         score = torch.matmul(z, z.transpose(-1, -2))
         logit = self.alpha * (score - self.delta)
+        l_new = self.alpha_new * (score - self.delta_new)
+        weight_new = F.softplus(self.gamma * score + self.beta)
         if residual_skip and a0_log is not None and times is not None:
             delta_log = self.residual_scale * score + self.residual_bias
             delta_log = torch.tanh(delta_log) * float(residual_cap)
@@ -124,12 +130,14 @@ class ConnDecoder(nn.Module):
                 base = a0_log.unsqueeze(1)
             else:
                 base = a0_log
-            pred_log = base + scale * delta_log
+            support = (base > 0).to(dtype=delta_log.dtype)
+            pred_log = base + scale * (delta_log * support)
             weight = torch.expm1(pred_log)
         else:
-            weight = F.softplus(self.gamma * score + self.beta)
+            weight = weight_new
         weight = weight - torch.diag_embed(torch.diagonal(weight, dim1=-2, dim2=-1))
-        return logit, weight
+        weight_new = weight_new - torch.diag_embed(torch.diagonal(weight_new, dim1=-2, dim2=-1))
+        return logit, weight, weight_new, l_new
 
 
 class CLGODE(nn.Module):
@@ -194,7 +202,7 @@ class CLGODE(nn.Module):
         zt = integrate_latent(self.ode_func, z0, times, cov, self.solver_steps)
         z_morph_t, z_conn_t = torch.chunk(zt, 2, dim=-1)
         x_hat = self.morph_decoder(z_morph_t)
-        a_logit, a_weight = self.conn_decoder(
+        a_logit, a_weight, a_weight_new, l_new = self.conn_decoder(
             z_conn_t,
             a0_log=a0,
             times=times,
@@ -212,6 +220,8 @@ class CLGODE(nn.Module):
             logvar_morph=logvar_morph,
             mu_conn=mu_conn,
             logvar_conn=logvar_conn,
+            a_weight_new=a_weight_new,
+            l_new=l_new,
         )
 
 
