@@ -4,6 +4,7 @@
 ## Current focus
 - 2026-01-16: Validate CLG-ODE loss stabilization changes (topo normalization + GradNorm + warmup).
 - 2026-01-19: Enforce container-only DL training and align CLG-ODE sparse prediction with masked expected weight.
+- 2026-01-20: Diagnose density-convergence behavior and iterate sparse mask constraints.
 
 ## Completed
 - 2026-01-12: Drafted the repo-structure refactor plan in `PLAN.md`.
@@ -74,6 +75,7 @@
 - 2026-01-19: Added fold0 submit scripts to test mask alignment and constraints (`scripts/submit_clg_ode_mask_fold0_*.sh` + batch wrapper).
 - 2026-01-19: Ran and summarized the fold0 mask/density/zero ablations; documented metrics and next-step suggestions in `docs/reports/clg_ode_mask_fold0_20260119.md`.
 - 2026-01-19: Added early stopping monitors based on validation SC sparse/top-k metrics and a 10-experiment density convergence submit set (`scripts/submit_clg_ode_density_10exp_batch.sh`).
+- 2026-01-20: Summarized the 10 density-convergence experiments (fold0) and wrote a report (`docs/reports/clg_ode_density_convergence_fold0_20260120.md`).
 
 ## In progress
 

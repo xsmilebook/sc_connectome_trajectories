@@ -279,6 +279,8 @@ bash scripts/submit_clg_ode_density_10exp_batch.sh
 
 - `scripts/submit_clg_ode_density_twostage_fold0_{a,b}.sh` 会提交两个作业并用 `--dependency=afterok` 串联；Phase-2 使用 Phase-1 的 `clg_ode_fold0_best.pt` 作为 `RESUME_FROM`。
 
+本轮实验结果解读见：`docs/reports/clg_ode_density_convergence_fold0_20260120.md`。
+
 可选环境变量（不改脚本也能快速调整）：
 `FOLD_ID=0`，`MAX_EPOCHS=8`，`PATIENCE=3`，`BATCH_SIZE=2`，`TOPO_SCALE_Q=0.9`，`TOPO_WARMUP_FRAC=0.2`，`RUN_TAG=smoke`。
 
