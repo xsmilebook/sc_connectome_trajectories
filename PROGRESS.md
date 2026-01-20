@@ -5,6 +5,7 @@
 - 2026-01-16: Validate CLG-ODE loss stabilization changes (topo normalization + GradNorm + warmup).
 - 2026-01-19: Enforce container-only DL training and align CLG-ODE sparse prediction with masked expected weight.
 - 2026-01-20: Diagnose density-convergence behavior and iterate sparse mask constraints.
+- 2026-01-20: Update evaluation plan docs to remove cross-validation (single-fold reporting for speed).
 
 ## Completed
 - 2026-01-12: Drafted the repo-structure refactor plan in `PLAN.md`.

@@ -90,7 +90,8 @@
 训练器以“被试”为分组单位：
 
 - 外层：GroupShuffleSplit 划分 trainval/test（默认 test=0.2）。
-- 内层：在 trainval 内部进行 5-fold GroupKFold 交叉验证并早停，选择最佳 fold 权重。
+- 内层：在 trainval 内部用 GroupKFold 构造 train/val（默认 5-fold）。
+  - 为节省时间的推荐做法：只跑单一 `--cv_fold`（如 fold0），不做跨 fold 平均；如需稳健性，可在同配置下追加 1 个 fold 做一致性核对。
 
 ### 早停与输出
 
