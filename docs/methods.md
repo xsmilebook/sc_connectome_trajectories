@@ -106,3 +106,11 @@
   - `ecc_l2` / `ecc_pearson`：预测与真实的 Euler characteristic curve 相似性指标（基于 `log(1 + A)` 域，预测矩阵先按真实正边数量做 top-k 稀疏化）。
   - 当被试只有 1 个时间点时，测试指标基于同一时点的重建输出；当被试有 ≥2 个时间点时，使用固定的 `t0→t1` 预测输出（保证可重复）。
  - 训练过程中会记录 `vel/acc` 有效样本计数（`train_vel_count/train_acc_count/val_vel_count/val_acc_count`），用于判断速度/加速度损失是否被触发。
+
+### Δt 分层报告（推荐）
+
+- 为更清晰地展示“短间隔不劣于 identity、长间隔学到变化”，建议按测试对的 `dt_months` 进行分位数分层：
+  - Short：`dt_months ≤ P33(dt_months)`
+  - Long：`dt_months ≥ P67(dt_months)`
+  - （可选）Mid：其余样本
+- 报告时务必写出 `P33/P67` 对应的具体月份阈值与各桶样本量（例如 “Short（≤4.8 months, n=xxx），Long（≥13.2 months, n=xxx）”）。

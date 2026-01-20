@@ -166,6 +166,7 @@ sbatch --array=0-4 scripts/submit_clg_ode.sh
 - 支持 1/2/3 个时间点的被试共同训练（Tier 3/2/1）；对应 `L_manifold/L_vel/L_acc` 的启用与 warmup 见 `docs/methods.md`。
 - 测试评估当前仅覆盖 SC；单时间点被试使用重建输出评估，多时间点被试使用 `i→j` 预测输出评估。
 - 测试评估采用固定的 `t0→t1` 对（避免随机性），ECC 评估时对预测矩阵做 top-k 稀疏化（k 为真实正边数）。
+- 为突出“短间隔稳定、长间隔改进”，建议在汇报时按测试对的 `dt_months` 做分位数分层：Short（≤P33）、Long（≥P67）（可选 Mid），并在表/图注中写出对应月份阈值与样本量。
 - 拓扑损失（Betti curve）为实验性增强项，默认启用；细节见 `docs/methods.md`。
 - 训练阶段对预测权重执行 top-k 稀疏化用于 `L_weight` 与 `L_topo`，与真实稀疏结构对齐（见 `docs/methods.md`）。
 - 可选残差跳连：`--residual_skip` 启用 log 空间残差（`log1p(a0) + s(dt)*tanh(delta)`），`s(dt)=dt/(dt+tau)` 由 `--residual_tau` 控制。

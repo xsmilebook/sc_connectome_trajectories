@@ -6,6 +6,7 @@
 - 2026-01-19: Enforce container-only DL training and align CLG-ODE sparse prediction with masked expected weight.
 - 2026-01-20: Diagnose density-convergence behavior and iterate sparse mask constraints.
 - 2026-01-20: Update evaluation plan docs to remove cross-validation (single-fold reporting for speed).
+- 2026-01-20: Specify dt-quantile stratified reporting (P33/P67) and conservative innovation hyperparameters (N=400, TopM/K_new, dt gating, focal + sparsity ramp).
 
 ## Completed
 - 2026-01-12: Drafted the repo-structure refactor plan in `PLAN.md`.
