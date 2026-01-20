@@ -56,10 +56,11 @@
   * `g(dt) = min(1, dt_months / 12)`
   * `dt=0 → 0`；`dt=6 → 0.5`；`dt≥12 → 1`
 * **创新概率（保守阈值）**：
-  * `q_ij = g(dt) * sigmoid((s_new_ij - δ)/τ)`
+  * 记创新 head 的原始输出为 `l_new_ij`（raw logit/score，pre-sigmoid，且未乘 `g(dt)`、未减去 `δ`），则：
+    * `q_ij = g(dt) * sigmoid((l_new_ij - δ)/τ)`
   * `τ = 0.10`
   * `δ = P95(s_new over candidate TopM)`
-    * 推荐“每个样本”各自计算 P95（更保守）；若来不及可退化为 batch 级 P95。
+    * 计算域：每个样本、仅在 `m0=0` 的候选 TopM 边集合上计算 P95（更保守）；若来不及可退化为 batch 级 P95。
 * **损失（偏 precision、强保守）**：
   * edge classification：focal（`gamma=2, alpha=0.25`）
   * 新增稀疏惩罚：`L_new_sparse = mean(q)`（只在候选集上）
