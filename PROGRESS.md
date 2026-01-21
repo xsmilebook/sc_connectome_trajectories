@@ -13,6 +13,7 @@
 - 2026-01-20: Fix innovation evaluation crash (NumPy indexing with CUDA tensors) and enable rerunning D2 successfully.
 - 2026-01-21: Summarize fold0 baselines/ablations/D2 outcomes and write report.
 - 2026-01-21: Add D2′ design (long-only gate + freeze backbone) and extend test metrics with new-edge and zero-region diagnostics.
+- 2026-01-21: Fix D2′ freeze-phase crash by biasing long-interval sampling and skipping backward on no-grad batches.
 
 ## Completed
 - 2026-01-12: Drafted the repo-structure refactor plan in `PLAN.md`.

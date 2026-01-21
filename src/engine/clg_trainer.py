@@ -649,6 +649,40 @@ class CLGTrainer:
         j = int(self._rng.integers(i + 1, length))
         return i, j
 
+    def _innovation_phase(self, epoch: int) -> bool:
+        return (
+            self.innovation_enabled
+            and self.innovation_freeze_backbone_after >= 0
+            and epoch >= self.innovation_freeze_backbone_after
+        )
+
+    def _sample_pair_epoch(self, length: int, epoch: int) -> Tuple[int, int]:
+        if not self._innovation_phase(epoch):
+            return self._sample_pair(length)
+        if length <= 2:
+            return 0, max(1, length - 1)
+        # Prefer non-adjacent pairs to expose longer dt for innovation-only training.
+        if length == 3:
+            return 0, 2
+        i = int(self._rng.integers(0, length - 2))
+        j_low = min(length - 1, i + 2)
+        j = int(self._rng.integers(j_low, length))
+        return i, j
+
+    def _sample_triplet_epoch(self, length: int, epoch: int) -> Tuple[int, int, int]:
+        if not self._innovation_phase(epoch):
+            return self._sample_triplet(length)
+        if length < 3:
+            return 0, min(1, length - 1), min(2, length - 1)
+        if length == 3:
+            return 0, 1, 2
+        i = int(self._rng.integers(0, length - 2))
+        j = min(i + 1, length - 2)
+        k = length - 1
+        if k <= j:
+            k = j + 1
+        return i, j, k
+
     def _sample_triplet(self, length: int) -> Tuple[int, int, int]:
         if length < 3:
             return 0, min(1, length - 1), min(2, length - 1)
@@ -1329,6 +1363,8 @@ class CLGTrainer:
             if not batch:
                 continue
             loss, metrics = self._compute_loss(model, batch, triu_idx, stats, volume_indices, epoch)
+            if not loss.requires_grad:
+                continue
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
@@ -1645,9 +1681,9 @@ class CLGTrainer:
 
         for b, length in enumerate(lengths):
             if length >= 3:
-                i, j, k = self._sample_triplet(length)
+                i, j, k = self._sample_triplet_epoch(length, epoch)
             elif length == 2:
-                i, j = self._sample_pair(length)
+                i, j = self._sample_pair_epoch(length, epoch)
                 k = None
             else:
                 i, j, k = 0, None, None

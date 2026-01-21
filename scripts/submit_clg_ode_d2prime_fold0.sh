@@ -57,4 +57,3 @@ export SC_POS_EDGE_DROP_PROB=0.0
 export MORPH_NOISE_SIGMA=0.0
 
 bash scripts/submit_clg_ode.sh
-
