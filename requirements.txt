@@ -1,0 +1,26 @@
+# NOTE: This project runs training/evaluation inside a Singularity container (see `scripts/containers/torch_gnn.def`).
+# Do NOT attempt to install these on the host cluster nodes. Use the container workflow in `docs/workflow.md`.
+#
+# This file is provided as a dependency manifest for reproducibility and container builds.
+
+numpy
+pandas
+scikit-learn
+scipy
+pytest
+
+# CUDA build pinned to the container base image.
+--index-url https://download.pytorch.org/whl/cu118
+torch==2.1.0+cu118
+torchvision==0.16.0+cu118
+torchaudio==2.1.0+cu118
+
+# PyG wheels for Torch 2.1.0 + CUDA 11.8.
+--find-links https://data.pyg.org/whl/torch-2.1.0+cu118.html
+pyg-lib
+torch-scatter
+torch-sparse
+torch-cluster
+torch-spline-conv
+torch-geometric
+

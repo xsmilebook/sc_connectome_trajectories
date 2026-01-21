@@ -92,6 +92,7 @@
 - 2026-01-21: Updated D2′ to resume from the trained C2 checkpoint and freeze the backbone from epoch 0 to preserve trunk metrics while fine-tuning innovation only.
 - 2026-01-21: Added degree/strength distribution topology metrics and an eval-only submission workflow to recompute test metrics for existing runs without retraining.
 - 2026-01-21: Wrote a fold0 technical comparison report with expanded topology metrics (`docs/reports/clg_ode_fold0_test_eval_topology_20260121.md`).
+- 2026-01-21: Added reproducibility materials: `requirements.txt`, `docs/reproducibility.md`, and a script to package a single-subject test sample into `outputs/results/`.
 
 ## In progress
 
