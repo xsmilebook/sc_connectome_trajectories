@@ -14,6 +14,7 @@
 - 2026-01-21: Summarize fold0 baselines/ablations/D2 outcomes and write report.
 - 2026-01-21: Add D2′ design (long-only gate + freeze backbone) and extend test metrics with new-edge and zero-region diagnostics.
 - 2026-01-21: Fix D2′ freeze-phase crash by biasing long-interval sampling and skipping backward on no-grad batches.
+- 2026-01-21: Check D2′ rerun results and document that goals were not met (needs resume-from-C2 to be a fair test).
 
 ## Completed
 - 2026-01-12: Drafted the repo-structure refactor plan in `PLAN.md`.
