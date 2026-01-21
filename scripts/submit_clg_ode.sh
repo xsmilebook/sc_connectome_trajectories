@@ -125,12 +125,15 @@ singularity exec --nv \
     ${INNOVATION_TAU:+--innovation_tau "$INNOVATION_TAU"} \
     ${INNOVATION_DELTA_QUANTILE:+--innovation_delta_quantile "$INNOVATION_DELTA_QUANTILE"} \
     ${INNOVATION_DT_SCALE_YEARS:+--innovation_dt_scale_years "$INNOVATION_DT_SCALE_YEARS"} \
+    ${INNOVATION_DT_OFFSET_MONTHS:+--innovation_dt_offset_months "$INNOVATION_DT_OFFSET_MONTHS"} \
+    ${INNOVATION_DT_RAMP_MONTHS:+--innovation_dt_ramp_months "$INNOVATION_DT_RAMP_MONTHS"} \
     ${INNOVATION_FOCAL_GAMMA:+--innovation_focal_gamma "$INNOVATION_FOCAL_GAMMA"} \
     ${INNOVATION_FOCAL_ALPHA:+--innovation_focal_alpha "$INNOVATION_FOCAL_ALPHA"} \
     ${LAMBDA_NEW_SPARSE:+--lambda_new_sparse "$LAMBDA_NEW_SPARSE"} \
     ${NEW_SPARSE_WARMUP_EPOCHS:+--new_sparse_warmup_epochs "$NEW_SPARSE_WARMUP_EPOCHS"} \
     ${NEW_SPARSE_RAMP_EPOCHS:+--new_sparse_ramp_epochs "$NEW_SPARSE_RAMP_EPOCHS"} \
     ${LAMBDA_NEW_REG:+--lambda_new_reg "$LAMBDA_NEW_REG"} \
+    ${INNOVATION_FREEZE_BACKBONE_AFTER:+--innovation_freeze_backbone_after "$INNOVATION_FREEZE_BACKBONE_AFTER"} \
     ${RESUME_FROM:+--resume_from "$RESUME_FROM"} \
     ${SC_POS_EDGE_DROP_PROB:+--sc_pos_edge_drop_prob "$SC_POS_EDGE_DROP_PROB"} \
     ${MORPH_NOISE_SIGMA:+--morph_noise_sigma "$MORPH_NOISE_SIGMA"} \

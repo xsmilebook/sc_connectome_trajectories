@@ -78,12 +78,15 @@ class CLGTrainer:
         innovation_tau: float = 0.10,
         innovation_delta_quantile: float = 0.95,
         innovation_dt_scale_years: float = 1.0,
+        innovation_dt_offset_months: float = 0.0,
+        innovation_dt_ramp_months: float = 12.0,
         innovation_focal_gamma: float = 2.0,
         innovation_focal_alpha: float = 0.25,
         lambda_new_sparse: float = 0.10,
         new_sparse_warmup_epochs: int = 10,
         new_sparse_ramp_epochs: int = 10,
         lambda_new_reg: float = 0.0,
+        innovation_freeze_backbone_after: int = -1,
         lambda_manifold: float = 1.0,
         lambda_vel: float = 0.1,
         lambda_acc: float = 0.05,
@@ -161,12 +164,15 @@ class CLGTrainer:
         self.innovation_tau = float(innovation_tau)
         self.innovation_delta_quantile = float(innovation_delta_quantile)
         self.innovation_dt_scale_years = float(innovation_dt_scale_years)
+        self.innovation_dt_offset_months = float(innovation_dt_offset_months)
+        self.innovation_dt_ramp_months = float(innovation_dt_ramp_months)
         self.innovation_focal_gamma = float(innovation_focal_gamma)
         self.innovation_focal_alpha = float(innovation_focal_alpha)
         self.lambda_new_sparse = float(lambda_new_sparse)
         self.new_sparse_warmup_epochs = int(new_sparse_warmup_epochs)
         self.new_sparse_ramp_epochs = int(new_sparse_ramp_epochs)
         self.lambda_new_reg = float(lambda_new_reg)
+        self.innovation_freeze_backbone_after = int(innovation_freeze_backbone_after)
         self.lambda_manifold = lambda_manifold
         self.lambda_vel = lambda_vel
         self.lambda_acc = lambda_acc
@@ -201,6 +207,8 @@ class CLGTrainer:
             raise ValueError("innovation_delta_quantile must be in (0, 1]")
         if self.innovation_dt_scale_years <= 0:
             raise ValueError("innovation_dt_scale_years must be > 0")
+        if self.innovation_dt_ramp_months <= 0:
+            raise ValueError("innovation_dt_ramp_months must be > 0")
         self.gradnorm_scope = scope
         self.gradnorm_enabled = scope != "none"
         self.gradnorm_alpha = float(gradnorm_alpha)
@@ -229,6 +237,30 @@ class CLGTrainer:
         self._topo_scale = 1.0
         self._gradnorm_weights = {"manifold": 1.0, "topo": 1.0}
         self._gradnorm_init_losses: Dict[str, torch.Tensor] = {}
+        self._innovation_backbone_frozen = False
+
+    def _maybe_freeze_backbone_for_innovation(self, model: nn.Module, epoch: int) -> None:
+        if not self.innovation_enabled:
+            return
+        if self.innovation_freeze_backbone_after < 0:
+            return
+        if epoch < self.innovation_freeze_backbone_after:
+            return
+        if self._innovation_backbone_frozen:
+            return
+
+        target = model.module if hasattr(model, "module") else model
+        trainable = {
+            "conn_decoder.alpha_new",
+            "conn_decoder.delta_new",
+            "conn_decoder.gamma_new",
+            "conn_decoder.beta_new",
+        }
+        for name, param in target.named_parameters():
+            param.requires_grad = name in trainable
+        self._innovation_backbone_frozen = True
+        if self.is_main:
+            print(f"Freeze backbone at epoch {epoch + 1}: training innovation head only.")
 
     def _monitor_requires_sc(self) -> bool:
         return self.early_stop_metric in {
@@ -697,12 +729,12 @@ class CLGTrainer:
         return float(min(1.0, (epoch - warmup_epochs + 1) / float(ramp_epochs)))
 
     @staticmethod
-    def _dt_gate(dt_years: float, scale_years: float) -> float:
+    def _dt_gate_months(dt_years: float, offset_months: float, ramp_months: float) -> float:
         if not np.isfinite(dt_years) or dt_years <= 0:
             return 0.0
-        if scale_years <= 0:
-            return 1.0
-        return float(min(1.0, dt_years / scale_years))
+        dt_months = float(dt_years) * 12.0
+        x = (dt_months - float(offset_months)) / float(max(ramp_months, 1e-6))
+        return float(min(1.0, max(0.0, x)))
 
     @staticmethod
     def _support_weight_loss(
@@ -751,7 +783,11 @@ class CLGTrainer:
         if not self.innovation_enabled or self.innovation_k_new == 0:
             return pred_support, out
 
-        gate = self._dt_gate(dt_years, self.innovation_dt_scale_years)
+        gate = self._dt_gate_months(
+            dt_years,
+            offset_months=self.innovation_dt_offset_months,
+            ramp_months=self.innovation_dt_ramp_months,
+        )
         if gate <= 0:
             return pred_support, out
 
@@ -806,6 +842,31 @@ class CLGTrainer:
 
         sparse_factor = self._linear_warmup_factor(epoch, self.new_sparse_warmup_epochs, self.new_sparse_ramp_epochs)
         out["loss_new_sparse"] = float(self.lambda_new_sparse) * float(sparse_factor) * q.mean()
+
+        # New-edge metrics on the pool (A0=0) edges, using q as the score.
+        y_pool = (a_true_raw[i_idx, j_idx] > 0).to(dtype=logits_new.dtype)[pool_pos]
+        score_triu = torch.zeros_like(l_vec.detach())
+        score_triu[cand_pos] = q.detach()
+        score_pool = score_triu[pool_pos]
+        topk_k = min(int(self.innovation_k_new), int(score_pool.numel()))
+        if topk_k > 0 and int(y_pool.sum().item()) > 0:
+            top_idx = torch.topk(score_pool.detach(), k=topk_k, largest=True).indices
+            tp = float(y_pool[top_idx].sum().item())
+            out["new_edge_precision_at_knew"] = tp / float(topk_k)
+            out["new_edge_recall_at_knew"] = tp / float(y_pool.sum().item())
+        else:
+            out["new_edge_precision_at_knew"] = 0.0
+            out["new_edge_recall_at_knew"] = 0.0
+
+        try:
+            y_np = y_pool.detach().cpu().numpy()
+            s_np = score_pool.detach().cpu().numpy()
+            if y_np.sum() > 0:
+                out["new_edge_auprc"] = float(average_precision_score(y_np, s_np))
+            else:
+                out["new_edge_auprc"] = 0.0
+        except Exception:
+            out["new_edge_auprc"] = 0.0
 
         if self.lambda_new_reg > 0:
             pred_new_vec = torch.clamp(pred_new_dense[i_idx, j_idx], min=0.0)[cand_pos]
@@ -1042,6 +1103,7 @@ class CLGTrainer:
         pred_weight: torch.Tensor,
         true_raw: torch.Tensor,
         triu_idx: Tuple[np.ndarray, np.ndarray],
+        a0_raw: torch.Tensor | None = None,
     ) -> Dict[str, float]:
         pred_log = torch.log1p(pred_weight)
         true_log = torch.log1p(true_raw)
@@ -1072,7 +1134,7 @@ class CLGTrainer:
         ecc_true = compute_ecc(true_np, k=self.topo_bins)
         ecc_l2 = float(np.linalg.norm(ecc_pred - ecc_true))
         ecc_corr = self._pearsonr_np(ecc_pred, ecc_true)
-        return {
+        metrics = {
             "sc_log_mse": mse,
             "sc_log_mae": mae,
             "sc_log_pearson": corr,
@@ -1082,6 +1144,28 @@ class CLGTrainer:
             "ecc_l2": ecc_l2,
             "ecc_pearson": ecc_corr,
         }
+        # Zero-edge / new-region diagnostics (log-domain).
+        true_raw_vec = true_raw[triu_idx[0], triu_idx[1]]
+        pred_log_vec = pred_log[triu_idx[0], triu_idx[1]]
+        mask_zero = true_raw_vec <= 0
+        if int(mask_zero.sum().item()) > 0:
+            metrics["mse_zero"] = float(torch.mean(pred_log_vec[mask_zero] ** 2).item())
+        else:
+            metrics["mse_zero"] = 0.0
+        if a0_raw is not None:
+            a0_vec = a0_raw[triu_idx[0], triu_idx[1]]
+            mask_new_region = a0_vec <= 0
+            if int(mask_new_region.sum().item()) > 0:
+                diff_new = pred_log_vec[mask_new_region] - true_vec[mask_new_region]
+                metrics["mse_new_region"] = float(torch.mean(diff_new ** 2).item())
+            else:
+                metrics["mse_new_region"] = 0.0
+            mask_zero_strict = mask_new_region & mask_zero
+            if int(mask_zero_strict.sum().item()) > 0:
+                metrics["mse_zero_strict"] = float(torch.mean(pred_log_vec[mask_zero_strict] ** 2).item())
+            else:
+                metrics["mse_zero_strict"] = 0.0
+        return metrics
 
     @staticmethod
     def _sparsify_pred(
@@ -2054,6 +2138,12 @@ class CLGTrainer:
             "sc_log_pearson_sparse": 0.0,
             "ecc_l2": 0.0,
             "ecc_pearson": 0.0,
+            "mse_zero": 0.0,
+            "mse_zero_strict": 0.0,
+            "mse_new_region": 0.0,
+            "new_edge_precision_at_knew": 0.0,
+            "new_edge_recall_at_knew": 0.0,
+            "new_edge_auprc": 0.0,
         }
         count = 0
         with torch.no_grad():
@@ -2110,6 +2200,8 @@ class CLGTrainer:
                         else:
                             pred_weight = self._expected_weight(outputs.a_logit[0, 0], outputs.a_weight[0, 0])
                         true_raw = a_raw[b, i]
+                        a0_raw = a_raw[b, i]
+                        innov_metrics: Dict[str, float] = {}
                     else:
                         age_j = float(ages[b, j].item())
                         dt_ij = self._clamp_dt(age_j - age_i, float(j - i))
@@ -2124,11 +2216,13 @@ class CLGTrainer:
                             use_mu=True,
                         )
                         true_raw = a_raw[b, j]
+                        a0_raw = a_raw[b, i]
+                        innov_metrics = {}
                         if self.fixed_support:
                             if outputs.a_weight_new is None or outputs.l_new is None:
                                 raise RuntimeError("Model outputs missing a_weight_new/l_new required for innovation.")
                             pred_weight = self._apply_fixed_support(outputs.a_weight[0, -1], a_raw[b, i])
-                            pred_weight, _ = self._innovation_step(
+                            pred_weight, innov = self._innovation_step(
                                 pred_support=pred_weight,
                                 pred_new_dense=torch.clamp(outputs.a_weight_new[0, -1], min=0.0),
                                 l_new=outputs.l_new[0, -1],
@@ -2138,10 +2232,16 @@ class CLGTrainer:
                                 triu_idx=triu_idx,
                                 epoch=self.max_epochs,
                             )
+                            innov_metrics = {
+                                k: float(innov.get(k, 0.0))
+                                for k in ["new_edge_precision_at_knew", "new_edge_recall_at_knew", "new_edge_auprc"]
+                            }
                         else:
                             pred_weight = self._expected_weight(outputs.a_logit[0, -1], outputs.a_weight[0, -1])
 
-                    metrics = self._sc_metrics(pred_weight, true_raw, triu_idx)
+                    metrics = self._sc_metrics(pred_weight, true_raw, triu_idx, a0_raw=a0_raw)
+                    if innov_metrics:
+                        metrics.update(innov_metrics)
                     for k, v in metrics.items():
                         if k in sums:
                             sums[k] += float(v)
@@ -2229,6 +2329,7 @@ class CLGTrainer:
                     f"Starting fold {fold_idx + 1}/{n_splits} with {len(train_idx)} train subjects and {len(val_idx)} val subjects"
                 )
             for epoch in range(self.max_epochs):
+                self._maybe_freeze_backbone_for_innovation(model, epoch)
                 if (
                     self.is_distributed
                     and dist.is_initialized()

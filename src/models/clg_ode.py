@@ -105,6 +105,8 @@ class ConnDecoder(nn.Module):
         self.residual_bias = nn.Parameter(torch.tensor(0.0))
         self.alpha_new = nn.Parameter(torch.tensor(10.0))
         self.delta_new = nn.Parameter(torch.tensor(0.0))
+        self.gamma_new = nn.Parameter(torch.tensor(1.0))
+        self.beta_new = nn.Parameter(torch.tensor(0.0))
 
     def forward(
         self,
@@ -119,7 +121,7 @@ class ConnDecoder(nn.Module):
         score = torch.matmul(z, z.transpose(-1, -2))
         logit = self.alpha * (score - self.delta)
         l_new = self.alpha_new * (score - self.delta_new)
-        weight_new = F.softplus(self.gamma * score + self.beta)
+        weight_new = F.softplus(self.gamma_new * score + self.beta_new)
         if residual_skip and a0_log is not None and times is not None:
             delta_log = self.residual_scale * score + self.residual_bias
             delta_log = torch.tanh(delta_log) * float(residual_cap)

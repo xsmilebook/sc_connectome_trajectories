@@ -151,6 +151,22 @@
 * D3d：去掉 dt gate → Δt 很小也新增（会很难看）
 * 目的：证明“我们能新增，但非常克制，且各保守组件都必要”
 
+#### D2′（推荐唯一新增实验）：更保守 + 冻结主干 + 仅长间隔启用
+
+目标：**不牺牲 C2 的主干指标**（`sc_log_mse/pearson/topk/sparse/ecc` 基本持平或更好），同时让创新模块在“新增边任务”上明显变好（即使全局指标不大动，也能证明模块有效）。
+
+- 起点：从 `C2` 出发（fixed-support + residual + dt gate，且 `lambda_delta_log=0`）
+- 仅改创新模块（更保守、更不扰动）：
+  - 仅长间隔启用：`g(dt)=clip((dt_months-9)/9, 0, 1)`（dt<9mo 不新增；dt=18mo 满功率）
+  - `K_new=40`，`TopM=200`
+  - `δ=P97.5`（逐样本、仅 `m0=0`、仅候选 TopM）
+  - `τ=0.07`
+  - `λ_new_sparse=0.20`（只在候选集上 `mean(q)`）
+- 训练策略（不破坏主干）：
+  - epoch 0–10：无 innovation（只训主干）
+  - epoch ≥10：开启 innovation，且 **冻结主干，仅训 innovation head**
+- 对应提交脚本（fold0）：`scripts/submit_clg_ode_d2prime_fold0.sh`
+
 ### E. 训练策略消融（可选但很有“工程说服力”）
 
 **E1. Phase-2 仅训练 innovation head（freeze 主干）**
@@ -192,6 +208,23 @@
   * `new_edge_precision`, `new_edge_recall`, `new_edge_auprc`（针对 A0=0 & A1>0）
 
 > 作用：证明“从头学位置很差”，以及“保守新增边在不增伪阳性的情况下提高召回”。
+
+#### D2/D2′ 必须补齐的新增边评测（避免收益被淹没）
+
+仅看全图 `sc_log_* / ecc_*` 会把新增边的价值淹没（新增边集合很小）。建议在 `test_sc_metrics.json` 中补充：
+
+1) 新增边子集指标（核心）  
+定义：`S_new={(i,j): A0=0 & A1>0}`（上三角）
+
+- `new_edge_precision_at_knew`：在 `m0=0` 边里按 `q` 排序取 top-`K_new`，命中真新增边比例
+- `new_edge_recall_at_knew`：同上，覆盖真新增边的比例
+- `new_edge_auprc`：在 `m0=0` 边上用 `q` 做二分类 PR-AUC
+
+2) 零边/新增区域误差（反映假阳性与新增区域拟合）
+
+- `mse_zero`：在 `A1=0` 的边上，`log1p(A_pred)` 的 MSE（越小越好）
+- `mse_zero_strict`：在 `A0=0 & A1=0` 的边上，`log1p(A_pred)` 的 MSE
+- `mse_new_region`：在 `A0=0` 区域上 `log1p(A_pred)` vs `log1p(A1)` 的 MSE（更敏感）
 
 ### 5.4 图论拓扑指标（全局 + 节点分布相似性）
 

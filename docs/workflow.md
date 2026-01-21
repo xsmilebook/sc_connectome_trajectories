@@ -267,6 +267,12 @@ Fixed-support + 保守新增边（fold0，用户提交；推荐交付版默认�
 sbatch scripts/submit_clg_ode_fixedsupport_innovation_fold0.sh
 ```
 
+唯一推荐新增实验（D2′，fold0，用户提交）：
+
+```bash
+sbatch scripts/submit_clg_ode_d2prime_fold0.sh
+```
+
 对照与消融（fold0，用户提交）：
 
 ```bash
@@ -293,6 +299,7 @@ sbatch scripts/submit_clg_ode_fixedsupport_no_residual_fold0.sh
 
 - `--fixed_support`：主干仅在 `A0>0` 支持集上学习/预测，避免无约束稠密化。
 - `--innovation_enabled`：仅在 `A0=0` 的边上做候选 TopM 与 TopK(K_new) 放行（保守新增边）。
+- D2′ 关键取舍：更强的长间隔 gate、更小的 TopM/K_new、更高的阈值分位数、更硬阈值温度、更强稀疏惩罚，并在 epoch≥10 后冻结主干仅训 innovation head（避免扰动 C2 主干指标）。
 - 训练期会在 `metrics.csv` 追加记录：`train_new_edge/train_new_sparse/train_new_reg/train_new_q_mean/train_new_kept_mean`（以及对应的 `val_*`）。
 
 ## density 收敛性实验（10 个任务）

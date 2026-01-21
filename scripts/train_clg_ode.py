@@ -217,11 +217,13 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--innovation_k_new", type=int, default=80)
     parser.add_argument("--innovation_tau", type=float, default=0.10)
     parser.add_argument("--innovation_delta_quantile", type=float, default=0.95)
+    parser.add_argument("--innovation_dt_offset_months", type=float, default=0.0)
+    parser.add_argument("--innovation_dt_ramp_months", type=float, default=12.0)
     parser.add_argument(
         "--innovation_dt_scale_years",
         type=float,
         default=1.0,
-        help="dt gate scale in years: g(dt)=min(1, dt/scale). (12 months => 1.0 year)",
+        help="Deprecated: prefer innovation_dt_offset_months + innovation_dt_ramp_months; kept for compatibility.",
     )
     parser.add_argument("--innovation_focal_gamma", type=float, default=2.0)
     parser.add_argument("--innovation_focal_alpha", type=float, default=0.25)
@@ -238,6 +240,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
         type=float,
         default=0.0,
         help="Optional weight regression on true new edges within candidate set.",
+    )
+    parser.add_argument(
+        "--innovation_freeze_backbone_after",
+        type=int,
+        default=-1,
+        help="Freeze backbone after N epochs and train innovation head only (set -1 to disable).",
     )
     parser.add_argument(
         "--run_name",
@@ -384,12 +392,15 @@ def main() -> None:
         innovation_tau=args.innovation_tau,
         innovation_delta_quantile=args.innovation_delta_quantile,
         innovation_dt_scale_years=args.innovation_dt_scale_years,
+        innovation_dt_offset_months=args.innovation_dt_offset_months,
+        innovation_dt_ramp_months=args.innovation_dt_ramp_months,
         innovation_focal_gamma=args.innovation_focal_gamma,
         innovation_focal_alpha=args.innovation_focal_alpha,
         lambda_new_sparse=args.lambda_new_sparse,
         new_sparse_warmup_epochs=args.new_sparse_warmup_epochs,
         new_sparse_ramp_epochs=args.new_sparse_ramp_epochs,
         lambda_new_reg=args.lambda_new_reg,
+        innovation_freeze_backbone_after=args.innovation_freeze_backbone_after,
         solver_steps=args.solver_steps,
         cv_folds=args.cv_folds,
         cv_fold=None if args.cv_fold < 0 else args.cv_fold,
