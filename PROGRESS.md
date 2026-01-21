@@ -11,6 +11,7 @@
 - 2026-01-20: Implement fixed-support residual + conservative innovation (TopM/TopK, per-sample P95 thresholding) and add fold0 sbatch template.
 - 2026-01-20: Add baseline/ablation sbatch scripts for identity, original CLG-ODE, fixed-support variants (dt gate / L_small / residual).
 - 2026-01-20: Fix innovation evaluation crash (NumPy indexing with CUDA tensors) and enable rerunning D2 successfully.
+- 2026-01-21: Summarize fold0 baselines/ablations/D2 outcomes and write report.
 
 ## Completed
 - 2026-01-12: Drafted the repo-structure refactor plan in `PLAN.md`.
