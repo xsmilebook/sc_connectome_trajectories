@@ -199,6 +199,13 @@
 
 > 作用：证明“我们不会乱加边”，以及“新增边模块只在必要时改善 zero 区域”。
 
+### 5.3 额外拓扑/分布指标（用于补足 ECC 之外的结构证据）
+
+为避免仅用 ECC 指标过于单薄，建议在测试评估中补充 **度分布/强度分布** 的对齐指标（在与真值相同边数的 top-k 稀疏化口径下计算）：
+
+- `deg_mae / deg_rmse / deg_pearson / deg_ks`：二值图度分布的误差、相关与 KS 距离
+- `strength_mae / strength_rmse / strength_pearson / strength_ks`：加权度（节点强度）分布的误差、相关与 KS 距离
+
 ### 5.3 Mask/位置分类指标（若涉及新增边或 learned mask）
 
 * `precision@k`, `recall@k`

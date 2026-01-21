@@ -1029,6 +1029,19 @@ class CLGTrainer:
             return 0.0
         return float(np.sum(x * y) / denom)
 
+    @staticmethod
+    def _ks_distance_np(x: np.ndarray, y: np.ndarray) -> float:
+        x = np.asarray(x).ravel()
+        y = np.asarray(y).ravel()
+        if x.size == 0 or y.size == 0:
+            return 0.0
+        xs = np.sort(x)
+        ys = np.sort(y)
+        all_vals = np.sort(np.concatenate([xs, ys], axis=0))
+        cdf_x = np.searchsorted(xs, all_vals, side="right") / float(xs.size)
+        cdf_y = np.searchsorted(ys, all_vals, side="right") / float(ys.size)
+        return float(np.max(np.abs(cdf_x - cdf_y)))
+
     def _betti_probes(self, n: int) -> torch.Tensor:
         probes = max(int(self.betti_probes), 1)
         cached = self._betti_probe_cache.get(n)
@@ -1168,6 +1181,33 @@ class CLGTrainer:
         ecc_true = compute_ecc(true_np, k=self.topo_bins)
         ecc_l2 = float(np.linalg.norm(ecc_pred - ecc_true))
         ecc_corr = self._pearsonr_np(ecc_pred, ecc_true)
+        # Degree / strength distribution diagnostics (computed on sparsified prediction).
+        pred_bin = (pred_sparse > 0).to(dtype=torch.float32)
+        true_bin = (true_raw > 0).to(dtype=torch.float32)
+        pred_deg = pred_bin.sum(dim=-1)
+        true_deg = true_bin.sum(dim=-1)
+        deg_diff = pred_deg - true_deg
+        deg_mae = float(torch.mean(torch.abs(deg_diff)).item())
+        deg_rmse = float(torch.sqrt(torch.mean(deg_diff ** 2)).item())
+        deg_corr = self._pearsonr_torch(pred_deg, true_deg)
+        pred_strength = pred_sparse.sum(dim=-1)
+        true_strength = true_raw.sum(dim=-1)
+        strength_diff = pred_strength - true_strength
+        strength_mae = float(torch.mean(torch.abs(strength_diff)).item())
+        strength_rmse = float(torch.sqrt(torch.mean(strength_diff ** 2)).item())
+        strength_corr = self._pearsonr_torch(pred_strength, true_strength)
+        try:
+            deg_ks = self._ks_distance_np(
+                pred_deg.detach().cpu().numpy(),
+                true_deg.detach().cpu().numpy(),
+            )
+            strength_ks = self._ks_distance_np(
+                pred_strength.detach().cpu().numpy(),
+                true_strength.detach().cpu().numpy(),
+            )
+        except Exception:
+            deg_ks = 0.0
+            strength_ks = 0.0
         metrics = {
             "sc_log_mse": mse,
             "sc_log_mae": mae,
@@ -1177,6 +1217,14 @@ class CLGTrainer:
             "sc_log_pearson_sparse": corr_sparse,
             "ecc_l2": ecc_l2,
             "ecc_pearson": ecc_corr,
+            "deg_mae": deg_mae,
+            "deg_rmse": deg_rmse,
+            "deg_pearson": deg_corr,
+            "deg_ks": float(deg_ks),
+            "strength_mae": strength_mae,
+            "strength_rmse": strength_rmse,
+            "strength_pearson": strength_corr,
+            "strength_ks": float(strength_ks),
         }
         # Zero-edge / new-region diagnostics (log-domain).
         true_raw_vec = true_raw[triu_idx[0], triu_idx[1]]
@@ -2174,6 +2222,14 @@ class CLGTrainer:
             "sc_log_pearson_sparse": 0.0,
             "ecc_l2": 0.0,
             "ecc_pearson": 0.0,
+            "deg_mae": 0.0,
+            "deg_rmse": 0.0,
+            "deg_pearson": 0.0,
+            "deg_ks": 0.0,
+            "strength_mae": 0.0,
+            "strength_rmse": 0.0,
+            "strength_pearson": 0.0,
+            "strength_ks": 0.0,
             "mse_zero": 0.0,
             "mse_zero_strict": 0.0,
             "mse_new_region": 0.0,

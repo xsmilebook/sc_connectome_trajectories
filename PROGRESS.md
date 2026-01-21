@@ -90,6 +90,7 @@
 - 2026-01-20: Analyzed the 10-run mask root-cause ablation (fold0) and wrote a report (`docs/reports/clg_ode_mask_rootcause_fold0_20260120.md`).
 - 2026-01-21: Implemented fixed-support SC prediction and conservative innovation (new-edge module), added new-edge/zero-region evaluation metrics, ran fold0 ablations, and wrote summary reports under `docs/reports/`.
 - 2026-01-21: Updated D2′ to resume from the trained C2 checkpoint and freeze the backbone from epoch 0 to preserve trunk metrics while fine-tuning innovation only.
+- 2026-01-21: Added degree/strength distribution topology metrics and an eval-only submission workflow to recompute test metrics for existing runs without retraining.
 
 ## In progress
 

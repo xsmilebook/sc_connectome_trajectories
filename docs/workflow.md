@@ -238,6 +238,28 @@ RESUME_FROM="outputs/results/clg_ode/runs/<your_c2_run>/fold0/clg_ode_fold0_best
   sbatch scripts/submit_clg_ode_d2prime_fold0.sh
 ```
 
+## 测试集复评估（补充拓扑指标；不重训）
+
+当你需要在不重训的情况下，为已有 run 补齐更多评估指标（例如度分布/强度分布等拓扑证据），可对已有 `fold0` 运行目录做“评估-only”：
+
+- 单个 run（由用户提交；`EVAL_RUN_DIR` 指向已有训练输出目录）：
+
+```bash
+EVAL_RUN_DIR="outputs/results/clg_ode/runs/<run>/fold0" \
+  sbatch scripts/submit_clg_ode_eval.sh
+```
+
+- 报告常用模型一键提交（每个模型一个 sbatch 任务；由用户执行）：
+
+```bash
+bash scripts/submit_clg_ode_eval_report_models_fold0.sh
+```
+
+评估输出会写入对应 run 目录：
+
+- `test_sc_metrics_ext.json`：扩展后的测试指标（含 degree/strength 分布指标）
+- `test_sc_metrics_ext_meta.json`：本次复评估元信息（时间戳、checkpoint 路径等）
+
 该脚本默认优先使用 `q_ai8`，若不可用再回落到 `q_ai4`，并通过 `torchrun` 启动单卡训练（自动选择 `master_port` 避免端口冲突）。可按需调整 `#SBATCH --gres`。
 提交前请确保日志目录存在：`mkdir -p outputs/logs/clg_ode`。
 
