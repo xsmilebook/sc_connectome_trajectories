@@ -2348,10 +2348,14 @@ class CLGTrainer:
                     raise ValueError("resume_from requires --cv_fold to target a single fold.")
                 if os.path.exists(self.resume_from):
                     state = torch.load(self.resume_from, map_location=self.device)
-                    if self.is_distributed and dist.is_initialized():
-                        model.module.load_state_dict(state)
-                    else:
-                        model.load_state_dict(state)
+                    target = model.module if (self.is_distributed and dist.is_initialized()) else model
+                    incompatible = target.load_state_dict(state, strict=False)
+                    if self.is_main and (incompatible.missing_keys or incompatible.unexpected_keys):
+                        print(
+                            "Resume checkpoint loaded with non-strict matching: "
+                            f"{len(incompatible.missing_keys)} missing keys, "
+                            f"{len(incompatible.unexpected_keys)} unexpected keys."
+                        )
                 else:
                     raise FileNotFoundError(f"resume_from not found: {self.resume_from}")
             optimizer = torch.optim.Adam(model.parameters(), lr=self.learning_rate)

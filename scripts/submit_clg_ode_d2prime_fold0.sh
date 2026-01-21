@@ -11,7 +11,11 @@ set -euo pipefail
 # D2′: More conservative innovation + freeze backbone + long-interval-only gate.
 # Base = C2: fixed-support + residual + dt gate, lambda_delta_log=0.
 export CLG_CV_FOLD="${CLG_CV_FOLD:-0}"
-export RUN_BASE="${RUN_BASE:-clg_d2prime_long_freeze}"
+export RUN_BASE="${RUN_BASE:-clg_d2prime_resume_c2_long_freeze}"
+
+# IMPORTANT: D2′ should resume from a trained C2 checkpoint; training from scratch and freezing early
+# underfits the backbone and will degrade trunk metrics.
+export RESUME_FROM="${RESUME_FROM:-outputs/results/clg_ode/runs/clg_fs_no_Lsmall/fold0/clg_ode_fold0_best.pt}"
 
 export RESIDUAL_SKIP=1
 export RESIDUAL_TAU=1.0
@@ -28,23 +32,23 @@ export INNOVATION_DELTA_QUANTILE=0.975
 export INNOVATION_DT_OFFSET_MONTHS=9
 export INNOVATION_DT_RAMP_MONTHS=9
 export LAMBDA_NEW_SPARSE=0.20
-export NEW_SPARSE_WARMUP_EPOCHS=10
+export NEW_SPARSE_WARMUP_EPOCHS=0
 export NEW_SPARSE_RAMP_EPOCHS=0
-export INNOVATION_FREEZE_BACKBONE_AFTER=10
+export INNOVATION_FREEZE_BACKBONE_AFTER=0
 
 export INNOVATION_FOCAL_GAMMA=2.0
 export INNOVATION_FOCAL_ALPHA=0.25
 export LAMBDA_NEW_REG=0.0
 
-export EARLY_STOP_METRIC="val_sc_log_pearson_sparse"
+export EARLY_STOP_METRIC="val_loss"
 export VAL_SC_EVAL_EVERY=1
 
 export ADJACENT_PAIR_PROB=1.0
 export LATENT_DIM=32
 export HIDDEN_DIM=64
 export SOLVER_STEPS=6
-export MAX_EPOCHS=120
-export PATIENCE=25
+export MAX_EPOCHS=40
+export PATIENCE=10
 export BATCH_SIZE=2
 export LEARNING_RATE=1e-4
 

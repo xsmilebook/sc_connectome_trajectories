@@ -220,6 +220,24 @@ RESUME_FROM="outputs/results/clg_ode/runs/<run>/fold0/clg_ode_fold0_best.pt" \
   sbatch scripts/submit_clg_ode_continue_fold0.sh
 ```
 
+## 推荐唯一新增实验：D2′（从 C2 resume 的保守新增边）
+
+如果你的目标是“**不牺牲 C2 主干指标**，但让创新模块在**新增边任务**上更有说服力”，推荐只追加一个实验 D2′：
+
+- 关键点：**从 C2 checkpoint 恢复（resume）并从 epoch 0 冻结主干**，只训练 innovation head（避免从零训练时主干未收敛就冻结导致全局指标变差）。
+- 提交脚本（fold0，默认从 C2 resume；由用户提交）：
+
+```bash
+sbatch scripts/submit_clg_ode_d2prime_fold0.sh
+```
+
+如需覆盖 checkpoint 路径（例如你自己的 C2 run 目录）：
+
+```bash
+RESUME_FROM="outputs/results/clg_ode/runs/<your_c2_run>/fold0/clg_ode_fold0_best.pt" \
+  sbatch scripts/submit_clg_ode_d2prime_fold0.sh
+```
+
 该脚本默认优先使用 `q_ai8`，若不可用再回落到 `q_ai4`，并通过 `torchrun` 启动单卡训练（自动选择 `master_port` 避免端口冲突）。可按需调整 `#SBATCH --gres`。
 提交前请确保日志目录存在：`mkdir -p outputs/logs/clg_ode`。
 

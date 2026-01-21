@@ -155,7 +155,7 @@
 
 目标：**不牺牲 C2 的主干指标**（`sc_log_mse/pearson/topk/sparse/ecc` 基本持平或更好），同时让创新模块在“新增边任务”上明显变好（即使全局指标不大动，也能证明模块有效）。
 
-- 起点：从 `C2` 出发（fixed-support + residual + dt gate，且 `lambda_delta_log=0`）
+- 起点：**从已训练好的 `C2` checkpoint 恢复（resume）**（fixed-support + residual + dt gate，且 `lambda_delta_log=0`），保证主干已收敛且指标稳定。
 - 仅改创新模块（更保守、更不扰动）：
   - 仅长间隔启用：`g(dt)=clip((dt_months-9)/9, 0, 1)`（dt<9mo 不新增；dt=18mo 满功率）
   - `K_new=40`，`TopM=200`
@@ -163,9 +163,9 @@
   - `τ=0.07`
   - `λ_new_sparse=0.20`（只在候选集上 `mean(q)`）
 - 训练策略（不破坏主干）：
-  - epoch 0–10：无 innovation（只训主干）
-  - epoch ≥10：开启 innovation，且 **冻结主干，仅训 innovation head**
-- 对应提交脚本（fold0）：`scripts/submit_clg_ode_d2prime_fold0.sh`
+  - **epoch 0 起：冻结主干，仅训练 innovation head**（因为主干来自 C2 checkpoint，不再需要 warmup）
+  - 同时将 `new_sparse_warmup_epochs=0`，避免“冻结但 gate=0 导致无梯度更新”的无效阶段。
+- 对应提交脚本（fold0，默认从 C2 resume）：`scripts/submit_clg_ode_d2prime_fold0.sh`（可用环境变量 `RESUME_FROM=...` 覆盖 checkpoint 路径）
 
 ### E. 训练策略消融（可选但很有“工程说服力”）
 
